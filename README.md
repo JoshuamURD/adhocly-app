@@ -1,7 +1,26 @@
-# Tauri + SvelteKit + TypeScript
+# Adhocly
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+A barebones, project-first todo app built with SvelteKit and Tauri. Tasks are saved locally in the browser/webview.
 
-## Recommended IDE Setup
+## Quick capture
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+Type a task and add optional metadata anywhere in the title:
+
+- `#project` — project (`#Client_Work` becomes “Client Work”)
+- `@tomorrow` — planned date
+- `!friday` — deadline
+
+Dates accept `today`, `tomorrow`, `nextweek`, weekday names, or `YYYY-MM-DD`. Tasks without a project go to **Inbox**.
+
+```text
+Send revised brief #Client_Work @tomorrow !friday
+```
+
+## Run
+
+```sh
+bun run dev       # browser
+bun run tauri dev # desktop app
+bun run check
+bun test
+```

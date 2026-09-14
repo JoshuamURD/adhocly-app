@@ -2,6 +2,7 @@
 
 const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
+/** @param {Date} date */
 function formatDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

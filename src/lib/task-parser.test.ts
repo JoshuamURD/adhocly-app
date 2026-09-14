@@ -1,7 +1,7 @@
-// @ts-nocheck
+// @ts-nocheck -- node:test runner, not part of the app build
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseTaskInput } from "./task-parser.js";
+import { parseTaskInput } from "./task-parser.ts";
 
 const monday = new Date(2026, 2, 2, 9);
 

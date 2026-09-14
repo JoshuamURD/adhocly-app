@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/environment";
-  import { parseTaskInput } from "$lib/task-parser.js";
+  import { parseTaskInput } from "$lib/task-parser";
 
   type Task = {
     id: string;

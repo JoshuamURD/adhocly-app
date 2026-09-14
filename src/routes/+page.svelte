@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { todaySection } from "$lib/task-views";
   import {
     createCreateTask,
     createDeleteTask,
@@ -12,7 +14,7 @@
   const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   function dateFromToday(days: number) {
-    const date = new Date();
+    const date = new Date(now);
     date.setDate(date.getDate() + days);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
@@ -29,7 +31,21 @@
   const deleteTaskMutation = createDeleteTask();
 
   let draft = $state("");
-  let activeProject = $state("All tasks");
+  let view = $state<"today" | "all" | "project">("today");
+  let activeProject = $state("Inbox");
+  let drawer: HTMLDialogElement;
+  let composer: HTMLDialogElement;
+  let taskInput: HTMLInputElement;
+  let now = $state(new Date());
+  let notice = $state("");
+
+  onMount(() => {
+    const timer = window.setInterval(() => (now = new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  });
+
+  const today = $derived(dateFromToday(0));
+  const viewTitle = $derived(view === "today" ? "Today" : view === "all" ? "All tasks" : activeProject);
   let showCompleted = $state(false);
 
   const tasks = $derived<Task[]>(tasksQuery.data?.data ?? []);
@@ -47,11 +63,34 @@
   const visibleTasks = $derived(
     tasks.filter(
       (task) =>
-        (activeProject === "All tasks" || task.project === activeProject) &&
+        (view === "today" ? todaySection(task, today) !== null : view === "all" || task.project === activeProject) &&
         (showCompleted || !task.completed),
     ),
   );
   const openCount = $derived(tasks.filter((task) => !task.completed).length);
+  const todayCount = $derived(tasks.filter((task) => !task.completed && todaySection(task, today)).length);
+  const viewCount = $derived(visibleTasks.filter((task) => !task.completed).length);
+  const sections = $derived(
+    view === "today"
+      ? ["Overdue", "Due today", "Planned today"].map((title) => ({
+          title,
+          tasks: visibleTasks.filter((task) => todaySection(task, today) === title),
+        })).filter((section) => section.tasks.length)
+      : [{ title: "Your tasks", tasks: visibleTasks }],
+  );
+
+  function navigate(next: typeof view, project = activeProject) {
+    view = next;
+    activeProject = project;
+    drawer.close();
+  }
+
+  function openComposer() {
+    notice = "";
+    if (!createTask.isPending) createTask.reset();
+    composer.showModal();
+    taskInput.focus();
+  }
 
   async function addTask(event: SubmitEvent) {
     event.preventDefault();
@@ -60,7 +99,7 @@
 
     const project = parsed.project
       ? projects.find((name) => name.toLowerCase() === parsed.project?.toLowerCase()) ?? parsed.project
-      : "Inbox";
+      : view === "project" ? activeProject : "Inbox";
     const task: TaskInput = {
       id: crypto.randomUUID(),
       title: parsed.title,
@@ -75,6 +114,8 @@
       const response = await createTask.mutateAsync({ data: task });
       if (response.status !== 201) throw new Error(response.data);
       draft = "";
+      composer.close();
+      notice = `Added “${task.title}” to ${project}.`;
     } catch {
       // The mutation exposes the error through syncError.
     }
@@ -115,863 +156,327 @@
 </script>
 
 <svelte:head>
-  <title>Adhocly — make a plan, quickly</title>
-  <meta
-    name="description"
-    content="A fast, project-first task list with natural-language dates."
-  />
+  <title>Adhocly — {viewTitle}</title>
+  <meta name="description" content="Make room for today. A thoughtful task list with quick, natural-language capture." />
 </svelte:head>
 
+{#snippet icon(name: "menu" | "sun" | "list" | "plus" | "close" | "arrow")}
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {#if name === "menu"}
+      <path d="M4 6h16M4 12h10M4 18h16" />
+    {:else if name === "sun"}
+      <circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+    {:else if name === "list"}
+      <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
+    {:else if name === "plus"}
+      <path d="M12 5v14M5 12h14" />
+    {:else if name === "close"}
+      <path d="m6 6 12 12M6 18 18 6" />
+    {:else}
+      <path d="M12 19V5m-6 6 6-6 6 6" />
+    {/if}
+  </svg>
+{/snippet}
+
 <div class="app-shell">
-  <aside class="sidebar">
-    <header class="brand">
-      <span class="brand-mark" aria-hidden="true">A</span>
-      <div>
-        <strong>adhocly</strong>
-        <small>make room for the work</small>
-      </div>
-    </header>
-
-    <nav aria-label="Task views">
-      <p class="nav-label">Workspace</p>
-      <button
-        class:active={activeProject === "All tasks"}
-        onclick={() => (activeProject = "All tasks")}
-      >
-        <span class="nav-icon">◎</span>
-        <span>All tasks</span>
-        <em>{openCount}</em>
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="icon-button menu-button" onclick={() => drawer.showModal()} aria-label="Open project navigation" aria-haspopup="dialog" aria-controls="project-drawer">
+        {@render icon("menu")}
       </button>
-
-      <div class="project-heading">
-        <p class="nav-label">Projects</p>
-        <span title="Create a project by typing #project in a task">#</span>
-      </div>
-      {#each projects as project}
-        <button class:active={activeProject === project} onclick={() => (activeProject = project)}>
-          <span class="project-dot" class:inbox={project === "Inbox"}></span>
-          <span>{project}</span>
-          <em>{countFor(project)}</em>
-        </button>
-      {/each}
-    </nav>
-
-    <footer class="sidebar-footer" aria-live="polite" title={syncError}>
-      <span class:error={syncError} class="signal"></span>
-      {syncError || (loading ? "Connecting…" : "Synced with server")}
-    </footer>
-  </aside>
+      <span class="wordmark">adhocly<span>.</span></span>
+    </div>
+  </header>
 
   <main>
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Current view</p>
-        <h1>{activeProject}</h1>
-      </div>
-      <div class="status">
-        <span>{openCount}</span>
-        <small>open {openCount === 1 ? "task" : "tasks"}</small>
-      </div>
-    </header>
-
-    <section class="capture" aria-labelledby="capture-title">
-      <div class="capture-copy">
-        <p class="eyebrow">Quick capture</p>
-        <h2 id="capture-title">What needs doing?</h2>
-      </div>
-      <form onsubmit={addTask}>
-        <label for="task-input" class="sr-only">New task</label>
-        <input
-          id="task-input"
-          bind:value={draft}
-          autocomplete="off"
-          placeholder="Write a task…  #project  @in 2 days  @every friday"
-        />
-        <button type="submit" aria-label="Add task" disabled={!parsedDraft.title || busy}>
-          <span>Add task</span><b aria-hidden="true">↵</b>
-        </button>
-      </form>
-      {#if syncError}
-        <p class="sync-error" role="alert">{syncError}</p>
-      {/if}
-      <div class="syntax" aria-live="polite">
-        {#if parsedDraft.project}
-          <span class="project-chip">#{parsedDraft.project}</span>
-        {:else}
-          <span><b>#project</b> assigns a project</span>
-        {/if}
-        {#if parsedDraft.plannedFor}
-          <span class="plan-chip">Plan · {displayDate(parsedDraft.plannedFor)}</span>
-        {:else}
-          <span><b>@tomorrow</b> plans it</span>
-        {/if}
-        {#if parsedDraft.dueOn}
-          <span class="due-chip">Due · {displayDate(parsedDraft.dueOn)}</span>
-        {:else}
-          <span><b>!friday</b> sets a deadline</span>
-        {/if}
-        {#if parsedDraft.repeatWeekday !== null}
-          <span class="plan-chip">Every {weekdayNames[parsedDraft.repeatWeekday]}</span>
-        {:else}
-          <span><b>@every friday</b> repeats it</span>
-        {/if}
-      </div>
-    </section>
-
-    <section class="task-section" aria-labelledby="task-list-title">
-      <div class="section-heading">
-        <h2 id="task-list-title">Open work</h2>
+    <header class="view-heading">
+      <h1>{viewTitle}<span class="title-dot">.</span></h1>
+      <div class="view-tools">
         <label class="completed-toggle">
           <input type="checkbox" bind:checked={showCompleted} />
           Show completed
         </label>
+        <span class="status" aria-label={`${viewCount} open tasks in this view`}>{String(viewCount).padStart(2, "0")}</span>
       </div>
+    </header>
 
-      <div class="task-list">
-        {#if loading}
-          <div class="empty-state">
-            <p>Loading tasks…</p>
-          </div>
-        {:else}
-        {#each visibleTasks as task (task.id)}
-          <article class:done={task.completed} class="task-card">
-            <button
-              class="check"
-              class:checked={task.completed}
-              onclick={() => toggleTask(task.id)}
-              disabled={busy}
-              aria-label={task.completed ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
-            >
-              {#if task.completed}✓{/if}
-            </button>
+    {#if syncError}
+      <p class="sync-error" role="alert">{syncError}</p>
+    {/if}
+    <p class="notice" role="status">{notice}</p>
 
-            <div class="task-body">
-              <h3>{task.title}</h3>
-              <div class="metadata">
-                <button class="project-name" onclick={() => (activeProject = task.project)}>
-                  <span></span>{task.project}
-                </button>
-                {#if task.plannedFor}
-                  <span class="meta plan"><i>↗</i> Plan {displayDate(task.plannedFor)}</span>
-                {/if}
-                {#if task.dueOn}
-                  <span class:overdue={task.dueOn < dateFromToday(0)} class="meta due">
-                    <i>◇</i> Due {displayDate(task.dueOn)}
-                  </span>
-                {/if}
-                {#if task.repeatWeekday != null}
-                  <span class="meta plan"><i>↻</i> Every {weekdayNames[task.repeatWeekday]}</span>
-                {/if}
-              </div>
+    <section class="task-section" aria-label={`${viewTitle} tasks`}>
+      {#if loading}
+        <div class="empty-state" role="status"><p>Gathering your tasks…</p></div>
+      {:else if tasksQuery.isError && !tasksQuery.data}
+        <div class="empty-state">
+          <h2>Let’s reconnect.</h2>
+          <p>Couldn’t load your tasks.</p>
+          <button class="text-button" onclick={() => tasksQuery.refetch()}>Try again →</button>
+        </div>
+      {:else if visibleTasks.length === 0}
+        <div class="empty-state">
+          <div class="empty-mark">{@render icon(view === "today" ? "sun" : "list")}</div>
+          <h2>{view === "today" ? "Nothing today." : "Clear for now."}</h2>
+          <button class="text-button" onclick={openComposer}>Add a task <span aria-hidden="true">↗</span></button>
+        </div>
+      {:else}
+        {#each sections as section (section.title)}
+          <div class="task-group">
+            {#if sections.length > 1}
+              <h2 class="group-title" class:overdue={section.title === "Overdue"}>
+                <span class="group-dot"></span>{section.title}<span class="group-count">{section.tasks.length}</span>
+              </h2>
+            {/if}
+            <div class="task-list">
+              {#each section.tasks as task (task.id)}
+                <article class:done={task.completed} class="task-card">
+                  <button class="check" class:checked={task.completed} onclick={() => toggleTask(task.id)} disabled={busy} aria-label={task.completed ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}>
+                    {#if task.completed}✓{/if}
+                  </button>
+                  <div class="task-body">
+                    <h3>{task.title}</h3>
+                    <div class="metadata">
+                      <button class="project-name" onclick={() => navigate("project", task.project)}><span></span>{task.project}</button>
+                      {#if task.plannedFor}
+                        <span class="meta plan">↗ Plan {displayDate(task.plannedFor)}</span>
+                      {/if}
+                      {#if task.dueOn}
+                        <span class:overdue={task.dueOn < today} class="meta due">◇ Due {displayDate(task.dueOn)}</span>
+                      {/if}
+                      {#if task.repeatWeekday != null}
+                        <span class="meta plan">↻ Every {weekdayNames[task.repeatWeekday]}</span>
+                      {/if}
+                    </div>
+                  </div>
+                  <button class="delete icon-button" onclick={() => deleteTask(task.id)} disabled={busy} aria-label={`Delete ${task.title}`}>
+                    {@render icon("close")}
+                  </button>
+                </article>
+              {/each}
             </div>
-
-            <button class="delete" onclick={() => deleteTask(task.id)} disabled={busy} aria-label={`Delete ${task.title}`}>
-              ×
-            </button>
-          </article>
-        {:else}
-          <div class="empty-state">
-            <span aria-hidden="true">✓</span>
-            <h3>Clear for now.</h3>
-            <p>Add a task above or choose another project.</p>
           </div>
         {/each}
-        {/if}
-      </div>
+      {/if}
     </section>
   </main>
+
+  <nav class="bottom-bar" aria-label="Main navigation">
+    <div class="bottom-inner">
+      <button class="bottom-link" class:active={view === "today"} aria-current={view === "today" ? "page" : undefined} onclick={() => navigate("today")}>
+        <span class="bottom-icon">{@render icon("sun")}{#if todayCount}<span class="nav-count">{todayCount}</span>{/if}</span>
+        <span>Today</span>
+      </button>
+      <button class="add-button" onclick={openComposer} aria-label="Create a task" aria-haspopup="dialog" aria-controls="task-composer">
+        {@render icon("plus")}
+      </button>
+      <button class="bottom-link" class:active={view === "all"} aria-current={view === "all" ? "page" : undefined} onclick={() => navigate("all")}>
+        {@render icon("list")}<span>All tasks</span>
+      </button>
+    </div>
+  </nav>
 </div>
 
-<style>
-  :global(*) {
-    box-sizing: border-box;
-  }
+<dialog bind:this={drawer} id="project-drawer" class="drawer" aria-labelledby="drawer-title">
+  <aside class="sidebar">
+    <header class="drawer-header">
+      <span class="wordmark" id="drawer-title">adhocly<span>.</span></span>
+      <button class="icon-button" onclick={() => drawer.close()} aria-label="Close project navigation">{@render icon("close")}</button>
+    </header>
+    <nav class="project-nav" aria-label="Projects and task views">
+      <p class="nav-label">Workspace</p>
+      <button class:active={view === "today"} aria-current={view === "today" ? "page" : undefined} onclick={() => navigate("today")}>
+        {@render icon("sun")}<span>Today</span><em>{todayCount}</em>
+      </button>
+      <button class:active={view === "all"} aria-current={view === "all" ? "page" : undefined} onclick={() => navigate("all")}>
+        {@render icon("list")}<span>All tasks</span><em>{openCount}</em>
+      </button>
+      <p class="nav-label project-heading">Projects <span>#</span></p>
+      {#each projects as project (project)}
+        <button class:active={view === "project" && activeProject === project} aria-current={view === "project" && activeProject === project ? "page" : undefined} onclick={() => navigate("project", project)}>
+          <span class="project-dot" class:inbox={project === "Inbox"}></span><span class="project-label">{project}</span><em>{countFor(project)}</em>
+        </button>
+      {/each}
+    </nav>
+    <footer class="sidebar-footer"><span>#</span><p>Type <b>#project</b> in a new task to file it.</p></footer>
+  </aside>
+</dialog>
 
+<dialog bind:this={composer} id="task-composer" class="composer" aria-labelledby="capture-title">
+  <section class="capture">
+    <header class="capture-heading">
+      <h2 id="capture-title">What needs doing?</h2>
+      <button class="icon-button" onclick={() => composer.close()} aria-label="Close task entry">{@render icon("close")}</button>
+    </header>
+    <form onsubmit={addTask}>
+      <label for="task-input" class="sr-only">New task</label>
+      <input id="task-input" bind:this={taskInput} bind:value={draft} autocomplete="off" placeholder="A task, a thought, a little reminder…" aria-describedby="capture-help" disabled={createTask.isPending} />
+      <button class="submit-task" type="submit" aria-label="Add task" disabled={!parsedDraft.title || busy}>{@render icon("arrow")}</button>
+    </form>
+    <div class="syntax" aria-live="polite">
+      <span class="project-chip">#{parsedDraft.project || (view === "project" ? activeProject : "Inbox")}</span>
+      {#if parsedDraft.plannedFor}<span class="plan-chip">Plan · {displayDate(parsedDraft.plannedFor)}</span>{/if}
+      {#if parsedDraft.dueOn}<span class="due-chip">Due · {displayDate(parsedDraft.dueOn)}</span>{/if}
+      {#if parsedDraft.repeatWeekday != null}<span class="plan-chip">Every {weekdayNames[parsedDraft.repeatWeekday]}</span>{/if}
+      {#if createTask.isPending}<span>Saving…</span>{/if}
+    </div>
+    {#if syncError}<p class="sync-error" role="alert">{syncError}</p>{/if}
+    <p id="capture-help" class="capture-help"><b>#project</b> to organise <span>·</span> <b>@today</b> to plan <span>·</span> <b>!friday</b> for a deadline <span>·</span> <b>@every friday</b> to repeat</p>
+  </section>
+</dialog>
+
+<style>
+  :global(*) { box-sizing: border-box; }
   :global(:root) {
     font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
-    color: #25231f;
-    background: #ebe7df;
+    color: #292d26;
+    background: #f6f3ec;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
-    --ink: #25231f;
-    --muted: #777269;
-    --paper: #f8f5ee;
-    --paper-deep: #eee9df;
-    --line: #d7d0c4;
-    --red: #e45b42;
-    --blue: #3f6f7b;
-    --green: #637c67;
+    --ink: #292d26;
+    --muted: #77776b;
+    --paper: #f6f3ec;
+    --line: #e2dfd4;
+    --red: #c64e36;
+    --green: #60745b;
   }
-
-  :global(body) {
-    margin: 0;
-    min-width: 320px;
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at 85% 8%, rgba(228, 91, 66, 0.08), transparent 25rem),
-      #ebe7df;
-  }
-
-  :global(button),
-  :global(input) {
-    font: inherit;
-  }
-
-  :global(button) {
-    color: inherit;
-  }
-
-  .app-shell {
-    min-height: 100vh;
-    display: grid;
-    grid-template-columns: 248px minmax(0, 1fr);
-  }
-
-  .sidebar {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    padding: 28px 20px 22px;
-    background: #242722;
-    color: #f4f0e7;
-    border-right: 1px solid #171916;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 0 8px 46px;
-  }
-
-  .brand-mark {
-    width: 38px;
-    height: 38px;
-    display: grid;
-    place-items: center;
-    color: #242722;
-    background: var(--red);
-    border-radius: 50% 50% 46% 54% / 55% 44% 56% 45%;
-    font-family: Georgia, serif;
-    font-size: 21px;
-    font-style: italic;
-    transform: rotate(-5deg);
-  }
-
-  .brand strong {
-    display: block;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 20px;
-    letter-spacing: -0.03em;
-  }
-
-  .brand small {
-    display: block;
-    margin-top: 1px;
-    color: #999c92;
-    font-size: 9px;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-  }
-
-  nav {
-    display: grid;
-    gap: 4px;
-  }
-
-  .nav-label,
-  .eyebrow {
-    margin: 0;
-    color: #979a91;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-
-  nav > .nav-label {
-    padding: 0 12px 8px;
-  }
-
-  .project-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 29px 12px 6px;
-  }
-
-  .project-heading span {
-    color: #73766e;
-    font-family: Georgia, serif;
-    font-size: 18px;
-  }
-
-  nav button {
-    width: 100%;
-    display: grid;
-    grid-template-columns: 19px 1fr auto;
-    align-items: center;
-    gap: 7px;
-    padding: 9px 11px;
-    border: 0;
-    border-radius: 7px;
-    color: #c5c6bf;
-    background: transparent;
-    text-align: left;
-    cursor: pointer;
-    transition: 150ms ease;
-  }
-
-  nav button:hover {
-    color: #fff;
-    background: #2d312b;
-  }
-
-  nav button.active {
-    color: #fff;
-    background: #353a32;
-  }
-
-  nav button em {
-    color: #777b72;
-    font-size: 11px;
-    font-style: normal;
-  }
-
-  .nav-icon {
-    color: #d6a96d;
-    font-size: 18px;
-  }
-
-  .project-dot {
-    width: 8px;
-    height: 8px;
-    margin-left: 4px;
-    border-radius: 50%;
-    background: #8ba6ac;
-    box-shadow: 0 0 0 3px rgba(139, 166, 172, 0.1);
-  }
-
-  .project-dot.inbox {
-    background: #d6a96d;
-    box-shadow: 0 0 0 3px rgba(214, 169, 109, 0.1);
-  }
-
-  .sidebar-footer {
-    margin-top: auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px;
-    color: #80847a;
-    border-top: 1px solid #363a34;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-  }
-
-  .signal {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #78977b;
-    box-shadow: 0 0 0 3px rgba(120, 151, 123, 0.12);
-  }
-
-  .signal.error {
-    background: var(--red);
-  }
-
-  main {
-    width: min(100%, 1040px);
-    padding: 31px clamp(30px, 5vw, 76px) 80px;
-  }
-
+  :global(body) { margin: 0; min-width: 320px; min-height: 100dvh; }
+  :global(body:has(dialog[open])) { overflow: hidden; }
+  :global(button), :global(input) { font: inherit; }
+  :global(button) { color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  :global(button:disabled) { cursor: not-allowed; opacity: .45; }
+  :global(:focus-visible) { outline: 2px solid var(--red); outline-offset: 4px; }
+  :global(::selection) { color: var(--ink); background: #f0cbbb; }
+  .app-shell { min-height: 100dvh; }
   .topbar {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    margin-bottom: 55px;
+    position: sticky; top: 0; z-index: 9; background: var(--paper);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    min-height: 89px; padding: calc(18px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 18px max(24px, env(safe-area-inset-left));
+    border-bottom: 1px solid var(--line);
   }
-
-  .topbar .eyebrow {
-    color: #9a9388;
+  .topbar-left { display: flex; align-items: center; gap: 20px; }
+  .icon-button { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; padding: 0; border: 0; border-radius: 12px; background: transparent; }
+  .icon-button:hover { background: #e7e6dc; }
+  .menu-button { border: 1px solid var(--line); }
+  .wordmark { font-family: Georgia, "Times New Roman", serif; font-size: 27px; font-weight: bold; letter-spacing: -.055em; }
+  .wordmark > span { color: var(--red); }
+  main { width: min(100%, 860px); margin: 0 auto; padding: 44px 32px calc(120px + env(safe-area-inset-bottom)); }
+  .view-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+  .view-tools { display: flex; align-items: center; gap: 20px; }
+  .nav-label { margin: 0; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(34px, 6vw, 52px); line-height: 1.1; font-weight: 400; letter-spacing: -.055em; overflow-wrap: anywhere; }
+  .title-dot { color: var(--red); }
+  .status { font-family: Georgia, serif; font-size: 30px; letter-spacing: -.04em; }
+  .notice { color: var(--green); font-size: 12px; overflow-wrap: anywhere; }
+  .notice:empty { margin: 0; }
+  .sync-error { padding: 12px 14px; color: #a33828; background: #fbe8e0; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+  .completed-toggle { display: flex; align-items: center; gap: 7px; min-height: 44px; color: var(--muted); font-size: 11px; cursor: pointer; }
+  .completed-toggle input { width: 14px; height: 14px; margin: 0; accent-color: var(--green); }
+  .task-group { margin-top: 22px; }
+  .task-group:first-child { margin-top: 0; }
+  .group-title { display: flex; align-items: center; gap: 9px; margin: 0 0 12px; font-size: 12px; font-weight: 600; }
+  .group-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .group-title.overdue { color: var(--red); }
+  .overdue .group-dot { background: var(--red); }
+  .group-count { color: var(--muted); font-size: 10px; font-weight: 400; }
+  .task-list { display: grid; gap: 7px; }
+  .task-card { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 7px; min-height: 88px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 12px; background: #fdfbf6; transition: border-color 140ms; animation: arrive 220ms ease both; }
+  .task-card:hover { border-color: #b8bca9; }
+  .task-card.done h3 { color: var(--muted); text-decoration: line-through; }
+  .check { position: relative; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; color: white; font-size: 12px; isolation: isolate; }
+  .check::before { content: ""; position: absolute; z-index: -1; inset: 11px; border: 1.5px solid #b6b9a9; border-radius: 50%; }
+  .check:hover::before { border-color: var(--green); }
+  .check.checked::before { background: var(--green); border-color: var(--green); }
+  .task-body { min-width: 0; }
+  .task-body h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.5; font-weight: 500; overflow-wrap: anywhere; }
+  .metadata { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 12px; color: var(--muted); font-size: 10px; }
+  .project-name { display: flex; align-items: center; gap: 5px; min-height: 24px; max-width: 100%; padding: 0; border: 0; background: transparent; color: #62705c; text-align: left; overflow-wrap: anywhere; }
+  .project-name > span { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: #8b9c83; }
+  .meta.plan { color: #546e77; }
+  .meta.overdue { color: var(--red); }
+  .delete { color: #9a8a7d; opacity: 0; transition: opacity 120ms; }
+  .delete :global(svg) { width: 17px; height: 17px; }
+  .task-card:hover .delete, .task-card:focus-within .delete { opacity: 1; }
+  .delete:hover { color: var(--red); background: #f8e5dc; }
+  .empty-state { padding: 62px 20px; text-align: center; }
+  .empty-mark { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 26px; color: var(--green); border: 1px solid #d9ddcd; border-radius: 50%; background: #edefe3; }
+  .empty-mark :global(svg) { width: 29px; height: 29px; }
+  .empty-state h2 { margin: 0; font-family: Georgia, serif; font-weight: 400; font-size: clamp(25px, 5vw, 32px); letter-spacing: -.035em; }
+  .empty-state > p { max-width: 330px; margin: 8px auto 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
+  .text-button { min-height: 44px; margin-top: 16px; padding: 8px; border: 0; background: transparent; color: var(--red); font-size: 12px; font-weight: 600; }
+  .text-button span { padding-left: 10px; }
+  .bottom-bar { position: fixed; z-index: 10; inset: auto 0 0; padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); border-top: 1px solid var(--line); background: #faf8f2f5; backdrop-filter: blur(16px); }
+  .bottom-inner { display: grid; grid-template-columns: 1fr 96px 1fr; align-items: center; max-width: 700px; height: 82px; margin: 0 auto; }
+  .bottom-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 100%; padding: 8px; border: 0; background: transparent; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .025em; }
+  .bottom-link.active { color: var(--red); }
+  .bottom-link:hover { background: #ebe7dc55; }
+  .bottom-icon { position: relative; display: flex; }
+  .nav-count { position: absolute; top: -5px; left: 24px; min-width: 16px; padding: 1px 4px; border-radius: 5px; background: #eee5d9; color: #8a5745; font-size: 9px; }
+  .add-button { display: grid; place-items: center; justify-self: center; width: 58px; height: 58px; margin-top: -25px; padding: 0; border: 5px solid var(--paper); border-radius: 21px; box-sizing: content-box; background: var(--red); color: white; box-shadow: 0 6px 16px #713b2520; transition: transform 150ms, background 150ms; }
+  .add-button :global(svg) { width: 28px; height: 28px; }
+  .add-button:hover { transform: translateY(-3px); background: #b7422c; }
+  dialog { padding: 0; border: 0; color: var(--ink); }
+  dialog::backdrop { background: #20251d66; backdrop-filter: blur(3px); }
+  .drawer { inset: 0 auto 0 0; width: min(340px, calc(100% - 32px)); max-width: none; height: 100dvh; max-height: 100dvh; margin: 0; background: #292f27; color: #f4f0e7; }
+  .drawer[open] { animation: drawer-in 200ms ease-out; }
+  .sidebar { display: flex; flex-direction: column; min-height: 100%; padding: calc(24px + env(safe-area-inset-top)) 22px calc(20px + env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left)); }
+  .drawer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 34px; }
+  .drawer .wordmark { font-size: 32px; }
+  .drawer .wordmark > span { color: #eb8c71; }
+  .drawer .icon-button:hover { background: #ffffff10; }
+  .project-nav { display: grid; gap: 5px; }
+  .nav-label { padding: 0 12px 10px; color: #a7ae9e; }
+  .project-heading { display: flex; justify-content: space-between; margin-top: 28px; }
+  .project-nav button { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 9px; background: transparent; color: #cbd0c3; text-align: left; font-size: 13px; }
+  .project-nav button:hover { background: #ffffff08; }
+  .project-nav button.active { background: #404938; color: #fff; }
+  .project-nav button.active :global(svg) { color: #edaf83; }
+  .project-nav em { color: #b2bbaa; font-size: 11px; font-style: normal; }
+  .project-label { overflow-wrap: anywhere; }
+  .project-dot { width: 8px; height: 8px; margin-left: 6px; border-radius: 3px; background: #8ba6ac; }
+  .project-dot.inbox { background: #d6a96d; }
+  .sidebar-footer { display: flex; align-items: center; gap: 12px; margin-top: auto; padding: 32px 12px 0; color: #b0b6a7; font-size: 11px; line-height: 1.8; }
+  .sidebar-footer > span { font-family: Georgia, serif; font-size: 28px; color: #ce9f77; }
+  .sidebar-footer p { margin: 0; }
+  .sidebar-footer b { color: #deded2; font-weight: 500; }
+  .composer { inset: auto 0 0; width: min(760px, calc(100% - 40px)); max-width: none; max-height: calc(100dvh - env(safe-area-inset-top) - 20px); margin: 0 auto calc(104px + env(safe-area-inset-bottom)); border: 1px solid var(--line); border-radius: 20px; background: #fcfaf5; box-shadow: 0 24px 70px #20251d33; }
+  .composer[open] { animation: arrive 180ms ease-out; }
+  .capture { padding: 26px; }
+  .capture-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+  .capture h2 { margin: 0; font-family: Georgia, serif; font-size: 28px; font-weight: 400; letter-spacing: -.04em; }
+  form { display: flex; align-items: center; gap: 8px; padding: 5px; border: 1px solid #d8d7ca; border-radius: 12px; background: white; }
+  form:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px #60745b12; }
+  form input { width: 100%; min-width: 0; padding: 13px 10px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 16px; }
+  form input::placeholder { color: #929486; }
+  .submit-task { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; border-radius: 9px; background: var(--red); color: white; }
+  .syntax { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 26px; margin-top: 14px; font-size: 11px; }
+  .syntax > span { padding: 4px 8px; border-radius: 5px; overflow-wrap: anywhere; }
+  .project-chip { background: #ebeddf; color: #57674b; }
+  .plan-chip { background: #e8eef0; color: #476873; }
+  .due-chip { background: #f7e5dc; color: #a14a31; }
+  .capture-help { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; color: var(--muted); font-size: 10px; line-height: 1.8; }
+  .capture-help b { font-weight: 600; color: #5e6556; }
+  .capture-help > span { padding: 0 5px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes drawer-in { from { transform: translateX(-100%); } }
+  @media (hover: none) { .delete { opacity: 1; } }
+  @media (max-width: 600px) {
+    .topbar { min-height: 76px; padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
+    .topbar-left { gap: 14px; }
+    main { padding: 36px 20px calc(120px + env(safe-area-inset-bottom)); }
+    .view-heading { gap: 12px; margin-bottom: 22px; }
+    .view-tools { gap: 14px; }
+    .status { font-size: 24px; }
+    .completed-toggle { font-size: 10px; }
+    .empty-state { padding: 42px 4px; }
+    .task-card { gap: 2px; padding-inline: 4px; }
+    .bottom-inner { height: 76px; }
+    .composer { width: 100%; margin-bottom: 0; max-height: calc(100dvh - env(safe-area-inset-top) - 20px); border-radius: 22px 22px 0 0; }
+    .capture { padding: 22px 18px calc(24px + env(safe-area-inset-bottom)); }
+    .capture h2 { font-size: 24px; }
   }
-
-  h1,
-  .capture h2,
-  .empty-state h3 {
-    font-family: Georgia, "Times New Roman", serif;
-  }
-
-  h1 {
-    margin: 3px 0 0;
-    font-size: clamp(29px, 4vw, 43px);
-    font-weight: 400;
-    letter-spacing: -0.045em;
-  }
-
-  .status {
-    min-width: 84px;
-    padding-left: 18px;
-    border-left: 1px solid #cbc4b8;
-  }
-
-  .status span {
-    display: block;
-    font-family: Georgia, serif;
-    font-size: 25px;
-    line-height: 1;
-  }
-
-  .status small {
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .capture {
-    position: relative;
-    padding: clamp(23px, 4vw, 38px);
-    overflow: hidden;
-    color: #f7f1e8;
-    background: #343832;
-    border: 1px solid #1e211d;
-    border-radius: 3px 3px 14px 3px;
-    box-shadow: 0 14px 35px rgba(37, 35, 31, 0.12);
-  }
-
-  .capture::after {
-    content: "";
-    position: absolute;
-    right: -45px;
-    top: -80px;
-    width: 220px;
-    height: 220px;
-    border: 1px solid rgba(228, 91, 66, 0.45);
-    border-radius: 46% 54% 58% 42%;
-    transform: rotate(28deg);
-    pointer-events: none;
-  }
-
-  .capture-copy {
-    position: relative;
-    z-index: 1;
-    margin-bottom: 21px;
-  }
-
-  .capture .eyebrow {
-    color: #e08b79;
-  }
-
-  .capture h2 {
-    margin: 3px 0 0;
-    font-size: clamp(24px, 3vw, 32px);
-    font-weight: 400;
-    letter-spacing: -0.035em;
-  }
-
-  form {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    gap: 8px;
-  }
-
-  form input {
-    min-width: 0;
-    flex: 1;
-    padding: 15px 17px;
-    color: #282b27;
-    border: 2px solid transparent;
-    border-radius: 5px;
-    outline: 0;
-    background: #fbf8f1;
-    box-shadow: inset 0 1px 0 #fff;
-  }
-
-  form input:focus {
-    border-color: #e07862;
-  }
-
-  form input::placeholder {
-    color: #9b968c;
-  }
-
-  form button[type="submit"] {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    padding: 0 15px 0 19px;
-    border: 0;
-    border-radius: 5px;
-    color: #fff;
-    background: var(--red);
-    cursor: pointer;
-    transition: transform 120ms ease, background 120ms ease;
-  }
-
-  form button[type="submit"]:hover:not(:disabled) {
-    background: #f06449;
-    transform: translateY(-1px);
-  }
-
-  form button[type="submit"]:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  form button b {
-    padding: 1px 5px;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 3px;
-    font-size: 12px;
-  }
-
-  .sync-error {
-    margin: 10px 0 0;
-    color: #a13f2e;
-    font-size: 12px;
-  }
-
-  .syntax {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 9px 20px;
-    min-height: 18px;
-    margin-top: 14px;
-    color: #999e94;
-    font-size: 10px;
-    letter-spacing: 0.025em;
-  }
-
-  .syntax b {
-    color: #cfcbc2;
-    font-weight: 600;
-  }
-
-  .syntax .project-chip,
-  .syntax .plan-chip,
-  .syntax .due-chip {
-    padding: 2px 7px;
-    color: #edf0ea;
-    border-radius: 3px;
-    background: #4a5148;
-  }
-
-  .syntax .plan-chip {
-    color: #c8dde0;
-    background: #3e5557;
-  }
-
-  .syntax .due-chip {
-    color: #ffd4ca;
-    background: #5b433c;
-  }
-
-  .task-section {
-    margin-top: 43px;
-  }
-
-  .section-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    padding: 0 2px;
-  }
-
-  .section-heading h2 {
-    margin: 0;
-    font-size: 11px;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-  }
-
-  .completed-toggle {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--muted);
-    font-size: 11px;
-    cursor: pointer;
-  }
-
-  .completed-toggle input {
-    accent-color: var(--green);
-  }
-
-  .task-list {
-    display: grid;
-    gap: 8px;
-  }
-
-  .task-card {
-    position: relative;
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 14px;
-    min-height: 76px;
-    padding: 15px 16px;
-    background: rgba(248, 245, 238, 0.86);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    box-shadow: 0 2px 0 rgba(77, 68, 55, 0.03);
-    transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
-    animation: task-in 300ms both;
-  }
-
-  .task-card:hover {
-    z-index: 1;
-    border-color: #bdb4a7;
-    background: var(--paper);
-    transform: translateX(3px);
-  }
-
-  .task-card.done {
-    opacity: 0.56;
-  }
-
-  .task-card.done h3 {
-    text-decoration: line-through;
-  }
-
-  .check {
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    color: white;
-    border: 1.5px solid #aaa398;
-    border-radius: 50%;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .check:hover {
-    border-color: var(--green);
-  }
-
-  .check.checked {
-    border-color: var(--green);
-    background: var(--green);
-    font-size: 12px;
-  }
-
-  .task-body {
-    min-width: 0;
-  }
-
-  .task-body h3 {
-    margin: 0 0 7px;
-    overflow: hidden;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 17px;
-    font-weight: 400;
-    letter-spacing: -0.015em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .metadata {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 7px 13px;
-    color: var(--muted);
-    font-size: 10px;
-  }
-
-  .project-name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0;
-    color: #5d6c67;
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .project-name span {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #78979e;
-  }
-
-  .meta {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .meta i {
-    font-family: Georgia, serif;
-    font-size: 12px;
-    font-style: normal;
-  }
-
-  .meta.plan {
-    color: var(--blue);
-  }
-
-  .meta.due {
-    color: #806b62;
-  }
-
-  .meta.overdue {
-    color: #c64631;
-  }
-
-  .delete {
-    width: 27px;
-    height: 27px;
-    padding: 0;
-    opacity: 0;
-    color: #9d7168;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    font-size: 20px;
-    cursor: pointer;
-    transition: opacity 120ms, background 120ms;
-  }
-
-  .task-card:hover .delete,
-  .delete:focus-visible {
-    opacity: 1;
-  }
-
-  .delete:hover {
-    background: #f0dfda;
-  }
-
-  .empty-state {
-    padding: 60px 20px;
-    color: var(--muted);
-    border: 1px dashed #c9c1b5;
-    border-radius: 4px;
-    text-align: center;
-  }
-
-  .empty-state > span {
-    display: grid;
-    width: 35px;
-    height: 35px;
-    margin: 0 auto 12px;
-    place-items: center;
-    color: var(--green);
-    border: 1px solid #9cad9e;
-    border-radius: 50%;
-  }
-
-  .empty-state h3 {
-    margin: 0;
-    color: var(--ink);
-    font-size: 21px;
-    font-weight: 400;
-  }
-
-  .empty-state p {
-    margin: 5px 0 0;
-    font-size: 12px;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  @keyframes task-in {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-  }
-
-  @media (max-width: 720px) {
-    .app-shell {
-      display: block;
-    }
-
-    .sidebar {
-      position: static;
-      width: 100%;
-      height: auto;
-      padding: 16px 18px;
-    }
-
-    .brand {
-      margin: 0 0 15px;
-    }
-
-    .brand small,
-    .sidebar-footer,
-    .project-heading {
-      display: none;
-    }
-
-    nav {
-      display: flex;
-      gap: 6px;
-      overflow-x: auto;
-      padding-bottom: 2px;
-    }
-
-    nav > .nav-label {
-      display: none;
-    }
-
-    nav button {
-      width: auto;
-      min-width: max-content;
-      grid-template-columns: auto 1fr auto;
-    }
-
-    main {
-      padding: 25px 18px 55px;
-    }
-
-    .topbar {
-      margin-bottom: 28px;
-    }
-
-    .capture {
-      padding: 22px 18px;
-    }
-
-    form {
-      display: grid;
-    }
-
-    form button[type="submit"] {
-      min-height: 45px;
-      justify-content: center;
-    }
-
-    .syntax {
-      gap: 7px 12px;
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      scroll-behavior: auto !important;
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-    }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
   }
 </style>

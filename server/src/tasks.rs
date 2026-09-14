@@ -73,12 +73,9 @@ fn validate_task(task: &TaskInput) -> std::result::Result<(), AppError> {
 pub(crate) async fn list_tasks(
     State(db): State<SqlitePool>,
 ) -> std::result::Result<Json<Vec<Task>>, AppError> {
-    let tasks = sqlx::query_as::<_, Task>(
-        "SELECT id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-         FROM tasks ORDER BY created_at DESC, id DESC",
-    )
-    .fetch_all(&db)
-    .await?;
+    let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC, id DESC")
+        .fetch_all(&db)
+        .await?;
     Ok(Json(tasks))
 }
 
@@ -97,14 +94,11 @@ pub(crate) async fn get_task(
     Path(id): Path<String>,
     State(db): State<SqlitePool>,
 ) -> std::result::Result<Json<Task>, AppError> {
-    let task = sqlx::query_as::<_, Task>(
-        "SELECT id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-         FROM tasks WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(&db)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&db)
+        .await?
+        .ok_or(AppError::NotFound)?;
     Ok(Json(task))
 }
 
@@ -128,7 +122,7 @@ pub(crate) async fn create_task(
         "INSERT INTO tasks (
             id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
          ) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
-         RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+         RETURNING *",
     )
     .bind(task.id)
     .bind(task.title.trim())
@@ -170,7 +164,7 @@ pub(crate) async fn update_task(
             title = ?, project = ?, planned_for = ?, due_on = ?, repeat_weekday = ?,
             completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id = ?
-         RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+         RETURNING *",
     )
     .bind(task.title.trim())
     .bind(task.project.trim())
@@ -203,19 +197,16 @@ pub(crate) async fn toggle_task(
     Json(input): Json<ToggleInput>,
 ) -> std::result::Result<Json<ToggleResult>, AppError> {
     let mut transaction = db.begin().await?;
-    let current = sqlx::query_as::<_, Task>(
-        "SELECT id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-         FROM tasks WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let current = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id = ?
-         RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+         RETURNING *",
     )
     .bind(input.completed)
     .bind(&id)
@@ -234,7 +225,7 @@ pub(crate) async fn toggle_task(
                     repeat_weekday, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                     strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 0
                  FROM tasks WHERE id = ?
-                 RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+                 RETURNING *",
             )
             .bind(next_id)
             .bind(&id)
@@ -279,6 +270,37 @@ mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
 
+    fn assert_task(
+        task: &Task,
+        id: &str,
+        title: &str,
+        project: &str,
+        planned_for: Option<&str>,
+        due_on: Option<&str>,
+        repeat_weekday: Option<i64>,
+        completed: bool,
+    ) {
+        let Task {
+            id: actual_id,
+            title: actual_title,
+            project: actual_project,
+            planned_for: actual_planned_for,
+            due_on: actual_due_on,
+            repeat_weekday: actual_repeat_weekday,
+            created_at: _,
+            updated_at: _,
+            completed: actual_completed,
+        } = task;
+
+        assert_eq!(actual_id, id);
+        assert_eq!(actual_title, title);
+        assert_eq!(actual_project, project);
+        assert_eq!(actual_planned_for.as_deref(), planned_for);
+        assert_eq!(actual_due_on.as_deref(), due_on);
+        assert_eq!(*actual_repeat_weekday, repeat_weekday);
+        assert_eq!(*actual_completed, completed);
+    }
+
     #[tokio::test]
     async fn crud_round_trip() {
         let db = SqlitePoolOptions::new()
@@ -293,12 +315,21 @@ mod tests {
             title: "Write test".into(),
             project: "Inbox".into(),
             planned_for: Some("2026-04-01".into()),
-            due_on: None,
+            due_on: Some("2026-04-03".into()),
             repeat_weekday: Some(3),
             completed: false,
         };
         let (_, Json(created)) = create_task(State(db.clone()), Json(input)).await.unwrap();
-        assert_eq!(created.title, "Write test");
+        assert_task(
+            &created,
+            "task-1",
+            "Write test",
+            "Inbox",
+            Some("2026-04-01"),
+            Some("2026-04-03"),
+            Some(3),
+            false,
+        );
 
         let Json(result) = toggle_task(
             Path(created.id.clone()),
@@ -307,26 +338,64 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result.task.completed);
+        assert_task(
+            &result.task,
+            "task-1",
+            "Write test",
+            "Inbox",
+            Some("2026-04-01"),
+            Some("2026-04-03"),
+            Some(3),
+            true,
+        );
         let next = result.next_task.unwrap();
-        assert_eq!(next.planned_for.as_deref(), Some("2026-04-08"));
+        assert_task(
+            &next,
+            &next.id,
+            "Write test",
+            "Inbox",
+            Some("2026-04-08"),
+            Some("2026-04-10"),
+            Some(3),
+            false,
+        );
 
+        let next_id = next.id.clone();
         let update = TaskInput {
-            id: next.id.clone(),
+            id: next_id.clone(),
             title: "Updated test".into(),
-            project: next.project,
-            planned_for: next.planned_for,
-            due_on: next.due_on,
-            repeat_weekday: next.repeat_weekday,
-            completed: next.completed,
+            project: "Updated project".into(),
+            planned_for: Some("2026-05-01".into()),
+            due_on: Some("2026-05-09".into()),
+            repeat_weekday: Some(5),
+            completed: true,
         };
-        let Json(updated) = update_task(Path(next.id), State(db.clone()), Json(update))
+        let Json(updated) = update_task(Path(next_id), State(db.clone()), Json(update))
             .await
             .unwrap();
+        assert_task(
+            &updated,
+            &updated.id,
+            "Updated test",
+            "Updated project",
+            Some("2026-05-01"),
+            Some("2026-05-09"),
+            Some(5),
+            true,
+        );
         let Json(fetched) = get_task(Path(updated.id.clone()), State(db.clone()))
             .await
             .unwrap();
-        assert_eq!(fetched.title, "Updated test");
+        assert_task(
+            &fetched,
+            &updated.id,
+            "Updated test",
+            "Updated project",
+            Some("2026-05-01"),
+            Some("2026-05-09"),
+            Some(5),
+            true,
+        );
 
         delete_task(Path(created.id), State(db.clone()))
             .await

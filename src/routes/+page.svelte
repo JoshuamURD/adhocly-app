@@ -54,7 +54,10 @@
     if (!browser) return starterTasks;
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-      return Array.isArray(saved) ? saved : starterTasks;
+      return Array.isArray(saved) && saved.every((task) =>
+        task && typeof task.id === "string" && typeof task.title === "string" &&
+        typeof task.project === "string" && typeof task.completed === "boolean"
+      ) ? saved : starterTasks;
     } catch {
       return starterTasks;
     }

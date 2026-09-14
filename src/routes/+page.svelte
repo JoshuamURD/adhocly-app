@@ -1,18 +1,15 @@
 <script lang="ts">
-  import { browser } from "$app/environment";
+  import {
+    createCreateTask,
+    createDeleteTask,
+    createListTasks,
+    createToggleTask,
+    type Task,
+    type TaskInput,
+  } from "$lib/api/generated";
   import { parseTaskInput } from "$lib/task-parser";
 
-  type Task = {
-    id: string;
-    title: string;
-    project: string;
-    plannedFor: string | null;
-    dueOn: string | null;
-    createdAt: string;
-    completed: boolean;
-  };
-
-  const STORAGE_KEY = "adhocly.tasks.v1";
+  const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   function dateFromToday(days: number) {
     const date = new Date();
@@ -20,54 +17,27 @@
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
 
-  const starterTasks: Task[] = [
-    {
-      id: "welcome-1",
-      title: "Shape the first project brief",
-      project: "Launch Plan",
-      plannedFor: dateFromToday(0),
-      dueOn: dateFromToday(2),
-      createdAt: new Date().toISOString(),
-      completed: false,
-    },
-    {
-      id: "welcome-2",
-      title: "Collect three customer pain points",
-      project: "Research",
-      plannedFor: dateFromToday(1),
-      dueOn: null,
-      createdAt: new Date().toISOString(),
-      completed: false,
-    },
-    {
-      id: "welcome-3",
-      title: "Try the quick-capture syntax below",
-      project: "Inbox",
-      plannedFor: null,
-      dueOn: null,
-      createdAt: new Date().toISOString(),
-      completed: false,
-    },
-  ];
-
-  function loadTasks(): Task[] {
-    if (!browser) return starterTasks;
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-      return Array.isArray(saved) && saved.every((task) =>
-        task && typeof task.id === "string" && typeof task.title === "string" &&
-        typeof task.project === "string" && typeof task.completed === "boolean"
-      ) ? saved : starterTasks;
-    } catch {
-      return starterTasks;
-    }
+  function errorMessage(error: unknown) {
+    if (!error) return "";
+    if (typeof error === "string") return error;
+    return error instanceof Error ? error.message : "Could not reach the task server";
   }
 
-  let tasks = $state<Task[]>(loadTasks());
+  const tasksQuery = createListTasks();
+  const createTask = createCreateTask();
+  const toggleTaskMutation = createToggleTask();
+  const deleteTaskMutation = createDeleteTask();
+
   let draft = $state("");
   let activeProject = $state("All tasks");
   let showCompleted = $state(false);
 
+  const tasks = $derived<Task[]>(tasksQuery.data?.data ?? []);
+  const loading = $derived(tasksQuery.isPending);
+  const busy = $derived(createTask.isPending || toggleTaskMutation.isPending || deleteTaskMutation.isPending);
+  const syncError = $derived(
+    errorMessage(tasksQuery.error ?? createTask.error ?? toggleTaskMutation.error ?? deleteTaskMutation.error),
+  );
   const parsedDraft = $derived(parseTaskInput(draft));
   const projects = $derived(
     ["Inbox", ...new Set(tasks.map((task) => task.project).filter((project) => project !== "Inbox"))].sort((a, b) =>
@@ -83,38 +53,52 @@
   );
   const openCount = $derived(tasks.filter((task) => !task.completed).length);
 
-  $effect(() => {
-    if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  });
-
-  function addTask(event: SubmitEvent) {
+  async function addTask(event: SubmitEvent) {
     event.preventDefault();
     const parsed = parseTaskInput(draft);
-    if (!parsed.title) return;
+    if (!parsed.title || busy) return;
 
     const project = parsed.project
       ? projects.find((name) => name.toLowerCase() === parsed.project?.toLowerCase()) ?? parsed.project
       : "Inbox";
-
-    tasks.unshift({
+    const task: TaskInput = {
       id: crypto.randomUUID(),
       title: parsed.title,
       project,
       plannedFor: parsed.plannedFor,
       dueOn: parsed.dueOn,
-      createdAt: new Date().toISOString(),
+      repeatWeekday: parsed.repeatWeekday,
       completed: false,
-    });
-    draft = "";
+    };
+
+    try {
+      const response = await createTask.mutateAsync({ data: task });
+      if (response.status !== 201) throw new Error(response.data);
+      draft = "";
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
   }
 
-  function toggleTask(id: string) {
+  async function toggleTask(id: string) {
     const task = tasks.find((item) => item.id === id);
-    if (task) task.completed = !task.completed;
+    if (!task || busy) return;
+
+    try {
+      const response = await toggleTaskMutation.mutateAsync({ id, data: { completed: !task.completed } });
+      if (response.status !== 200) throw new Error(response.data);
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
   }
 
-  function deleteTask(id: string) {
-    tasks = tasks.filter((task) => task.id !== id);
+  async function deleteTask(id: string) {
+    if (busy) return;
+    try {
+      await deleteTaskMutation.mutateAsync({ id });
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
   }
 
   function countFor(project: string) {
@@ -172,9 +156,9 @@
       {/each}
     </nav>
 
-    <footer class="sidebar-footer">
-      <span class="signal"></span>
-      Saved on this device
+    <footer class="sidebar-footer" aria-live="polite" title={syncError}>
+      <span class:error={syncError} class="signal"></span>
+      {syncError || (loading ? "Connecting…" : "Synced with server")}
     </footer>
   </aside>
 
@@ -201,12 +185,15 @@
           id="task-input"
           bind:value={draft}
           autocomplete="off"
-          placeholder="Write a task…  #project  @tomorrow  !friday"
+          placeholder="Write a task…  #project  @in 2 days  @every friday"
         />
-        <button type="submit" aria-label="Add task" disabled={!parsedDraft.title}>
+        <button type="submit" aria-label="Add task" disabled={!parsedDraft.title || busy}>
           <span>Add task</span><b aria-hidden="true">↵</b>
         </button>
       </form>
+      {#if syncError}
+        <p class="sync-error" role="alert">{syncError}</p>
+      {/if}
       <div class="syntax" aria-live="polite">
         {#if parsedDraft.project}
           <span class="project-chip">#{parsedDraft.project}</span>
@@ -223,6 +210,11 @@
         {:else}
           <span><b>!friday</b> sets a deadline</span>
         {/if}
+        {#if parsedDraft.repeatWeekday !== null}
+          <span class="plan-chip">Every {weekdayNames[parsedDraft.repeatWeekday]}</span>
+        {:else}
+          <span><b>@every friday</b> repeats it</span>
+        {/if}
       </div>
     </section>
 
@@ -236,12 +228,18 @@
       </div>
 
       <div class="task-list">
+        {#if loading}
+          <div class="empty-state">
+            <p>Loading tasks…</p>
+          </div>
+        {:else}
         {#each visibleTasks as task (task.id)}
           <article class:done={task.completed} class="task-card">
             <button
               class="check"
               class:checked={task.completed}
               onclick={() => toggleTask(task.id)}
+              disabled={busy}
               aria-label={task.completed ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
             >
               {#if task.completed}✓{/if}
@@ -261,10 +259,13 @@
                     <i>◇</i> Due {displayDate(task.dueOn)}
                   </span>
                 {/if}
+                {#if task.repeatWeekday != null}
+                  <span class="meta plan"><i>↻</i> Every {weekdayNames[task.repeatWeekday]}</span>
+                {/if}
               </div>
             </div>
 
-            <button class="delete" onclick={() => deleteTask(task.id)} aria-label={`Delete ${task.title}`}>
+            <button class="delete" onclick={() => deleteTask(task.id)} disabled={busy} aria-label={`Delete ${task.title}`}>
               ×
             </button>
           </article>
@@ -275,6 +276,7 @@
             <p>Add a task above or choose another project.</p>
           </div>
         {/each}
+        {/if}
       </div>
     </section>
   </main>
@@ -477,6 +479,10 @@
     box-shadow: 0 0 0 3px rgba(120, 151, 123, 0.12);
   }
 
+  .signal.error {
+    background: var(--red);
+  }
+
   main {
     width: min(100%, 1040px);
     padding: 31px clamp(30px, 5vw, 76px) 80px;
@@ -621,6 +627,12 @@
     padding: 1px 5px;
     border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .sync-error {
+    margin: 10px 0 0;
+    color: #a13f2e;
     font-size: 12px;
   }
 

@@ -1,0 +1,31 @@
+[tools]
+bun = "1.4"
+rust = "stable"
+
+[tasks."api:gen"]
+description = "Regenerate OpenAPI and Orval client"
+run = "bun run api:gen"
+
+[tasks.server]
+description = "Run the SQLite API"
+dir = "server"
+run = '''
+db_dir="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly"
+db="$db_dir/adhocly.db"
+mkdir -p "$db_dir"
+[ -f "$db" ] || [ ! -f adhocly.db ] || cp adhocly.db "$db"
+DATABASE_URL="sqlite://$db?mode=rwc" cargo run
+'''
+
+[tasks."mobile:ios"]
+description = "Run the iOS app"
+run = '''
+device="${IOS_DEVICE:-iPhone 17}"
+xcrun simctl boot "$device" 2>/dev/null || true
+xcrun simctl bootstatus "$device" -b
+bun run tauri ios dev "$device"
+'''
+
+[tasks.dev]
+description = "Run the API and iOS app together"
+run = "mise run server ::: mobile:ios"

@@ -1,0 +1,446 @@
+use anyhow::{Context, Result};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    FromRow, SqlitePool,
+};
+use std::{env, str::FromStr};
+use tower_http::cors::CorsLayer;
+use utoipa::{OpenApi, ToSchema};
+
+const DEFAULT_DATABASE_URL: &str = "sqlite://adhocly.db?mode=rwc";
+const DEFAULT_BIND: &str = "127.0.0.1:3000";
+
+#[derive(Debug, Serialize, ToSchema, FromRow)]
+#[serde(rename_all = "camelCase")]
+struct Task {
+    id: String,
+    title: String,
+    project: String,
+    planned_for: Option<String>,
+    due_on: Option<String>,
+    repeat_weekday: Option<i64>,
+    created_at: String,
+    updated_at: String,
+    completed: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct TaskInput {
+    id: String,
+    title: String,
+    project: String,
+    planned_for: Option<String>,
+    due_on: Option<String>,
+    repeat_weekday: Option<i64>,
+    completed: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+struct ToggleInput {
+    completed: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct ToggleResult {
+    task: Task,
+    next_task: Option<Task>,
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(health, list_tasks, get_task, create_task, update_task, toggle_task, delete_task),
+    components(schemas(Task, TaskInput, ToggleInput, ToggleResult)),
+    tags((name = "tasks", description = "Task persistence API"))
+)]
+struct ApiDoc;
+
+#[derive(Debug, thiserror::Error)]
+enum AppError {
+    #[error("{0}")]
+    Invalid(&'static str),
+    #[error("task not found")]
+    NotFound,
+    #[error("database unavailable")]
+    Database(#[from] sqlx::Error),
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let status = match self {
+            Self::Invalid(_) => StatusCode::BAD_REQUEST,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Database(_) => StatusCode::SERVICE_UNAVAILABLE,
+        };
+        (status, self.to_string()).into_response()
+    }
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<()> {
+    if env::args().any(|arg| arg == "--openapi") {
+        println!("{}", ApiDoc::openapi().to_pretty_json()?);
+        return Ok(());
+    }
+
+    let options = SqliteConnectOptions::from_str(
+        &env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.into()),
+    )
+    .context("invalid DATABASE_URL")?
+    .create_if_missing(true)
+    .foreign_keys(true);
+    // ponytail: one connection fits a personal app; raise this if concurrent writes stall.
+    let db = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await
+        .context("failed to open SQLite database")?;
+    sqlx::migrate!()
+        .run(&db)
+        .await
+        .context("failed to migrate SQLite database")?;
+
+    let app = routes(db);
+    let bind = env::var("API_BIND").unwrap_or_else(|_| DEFAULT_BIND.into());
+    let listener = tokio::net::TcpListener::bind(&bind)
+        .await
+        .with_context(|| format!("failed to bind API to {bind}"))?;
+
+    println!("Adhocly API listening on http://{bind}");
+    axum::serve(listener, app)
+        .await
+        .context("API server stopped")
+}
+
+fn routes(db: SqlitePool) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/openapi.json", get(openapi))
+        .route("/api/tasks", get(list_tasks).post(create_task))
+        .route(
+            "/api/tasks/{id}",
+            get(get_task).put(update_task).delete(delete_task),
+        )
+        .route("/api/tasks/{id}/toggle", post(toggle_task))
+        .layer(CorsLayer::permissive())
+        .with_state(db)
+}
+
+fn validate_task(task: &TaskInput) -> std::result::Result<(), AppError> {
+    if task.id.trim().is_empty() {
+        return Err(AppError::Invalid("id is required"));
+    }
+    if task.title.trim().is_empty() {
+        return Err(AppError::Invalid("title is required"));
+    }
+    if task.project.trim().is_empty() {
+        return Err(AppError::Invalid("project is required"));
+    }
+    if !matches!(task.repeat_weekday, None | Some(0..=6)) {
+        return Err(AppError::Invalid("repeatWeekday must be between 0 and 6"));
+    }
+    Ok(())
+}
+
+async fn openapi() -> Json<utoipa::openapi::OpenApi> {
+    Json(ApiDoc::openapi())
+}
+
+#[utoipa::path(
+    get,
+    path = "/health",
+    operation_id = "health",
+    responses(
+        (status = 200, description = "Database is reachable"),
+        (status = 503, description = "Database is unavailable", body = String),
+    ),
+    tag = "tasks"
+)]
+async fn health(State(db): State<SqlitePool>) -> std::result::Result<StatusCode, AppError> {
+    sqlx::query("SELECT 1").execute(&db).await?;
+    Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/tasks",
+    operation_id = "listTasks",
+    responses((status = 200, description = "Tasks ordered newest first", body = [Task])),
+    tag = "tasks"
+)]
+async fn list_tasks(
+    State(db): State<SqlitePool>,
+) -> std::result::Result<Json<Vec<Task>>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+         FROM tasks ORDER BY created_at DESC, id DESC",
+    )
+    .fetch_all(&db)
+    .await?;
+    Ok(Json(tasks))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/tasks/{id}",
+    operation_id = "getTask",
+    params(("id" = String, Path, description = "Task id")),
+    responses(
+        (status = 200, description = "Task", body = Task),
+        (status = 404, description = "Task not found", body = String),
+    ),
+    tag = "tasks"
+)]
+async fn get_task(
+    Path(id): Path<String>,
+    State(db): State<SqlitePool>,
+) -> std::result::Result<Json<Task>, AppError> {
+    let task = sqlx::query_as::<_, Task>(
+        "SELECT id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+         FROM tasks WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(Json(task))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/tasks",
+    operation_id = "createTask",
+    request_body = TaskInput,
+    responses(
+        (status = 201, description = "Created task", body = Task),
+        (status = 400, description = "Invalid task", body = String),
+    ),
+    tag = "tasks"
+)]
+async fn create_task(
+    State(db): State<SqlitePool>,
+    Json(task): Json<TaskInput>,
+) -> std::result::Result<(StatusCode, Json<Task>), AppError> {
+    validate_task(&task)?;
+    let saved = sqlx::query_as::<_, Task>(
+        "INSERT INTO tasks (
+            id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+         ) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
+         RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+    )
+    .bind(task.id)
+    .bind(task.title.trim())
+    .bind(task.project.trim())
+    .bind(task.planned_for)
+    .bind(task.due_on)
+    .bind(task.repeat_weekday)
+    .bind(task.completed)
+    .fetch_one(&db)
+    .await?;
+    Ok((StatusCode::CREATED, Json(saved)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/tasks/{id}",
+    operation_id = "updateTask",
+    params(("id" = String, Path, description = "Task id")),
+    request_body = TaskInput,
+    responses(
+        (status = 200, description = "Updated task", body = Task),
+        (status = 400, description = "Invalid task", body = String),
+        (status = 404, description = "Task not found", body = String),
+    ),
+    tag = "tasks"
+)]
+async fn update_task(
+    Path(id): Path<String>,
+    State(db): State<SqlitePool>,
+    Json(task): Json<TaskInput>,
+) -> std::result::Result<Json<Task>, AppError> {
+    validate_task(&task)?;
+    if id != task.id {
+        return Err(AppError::Invalid("path and task ids must match"));
+    }
+
+    let saved = sqlx::query_as::<_, Task>(
+        "UPDATE tasks SET
+            title = ?, project = ?, planned_for = ?, due_on = ?, repeat_weekday = ?,
+            completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?
+         RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+    )
+    .bind(task.title.trim())
+    .bind(task.project.trim())
+    .bind(task.planned_for)
+    .bind(task.due_on)
+    .bind(task.repeat_weekday)
+    .bind(task.completed)
+    .bind(id)
+    .fetch_optional(&db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(Json(saved))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/tasks/{id}/toggle",
+    operation_id = "toggleTask",
+    params(("id" = String, Path, description = "Task id")),
+    request_body = ToggleInput,
+    responses(
+        (status = 200, description = "Toggled task and optional next recurring task", body = ToggleResult),
+        (status = 404, description = "Task not found", body = String),
+    ),
+    tag = "tasks"
+)]
+async fn toggle_task(
+    Path(id): Path<String>,
+    State(db): State<SqlitePool>,
+    Json(input): Json<ToggleInput>,
+) -> std::result::Result<Json<ToggleResult>, AppError> {
+    let mut transaction = db.begin().await?;
+    let current = sqlx::query_as::<_, Task>(
+        "SELECT id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+         FROM tasks WHERE id = ?",
+    )
+    .bind(&id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let task = sqlx::query_as::<_, Task>(
+        "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?
+         RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+    )
+    .bind(input.completed)
+    .bind(&id)
+    .fetch_one(&mut *transaction)
+    .await?;
+
+    let next_task = if !current.completed && input.completed && current.repeat_weekday.is_some() {
+        let next_id = uuid::Uuid::now_v7().to_string();
+        Some(
+            sqlx::query_as::<_, Task>(
+                "INSERT INTO tasks (
+                    id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+                 ) SELECT ?, title, project,
+                    CASE WHEN planned_for IS NULL THEN NULL ELSE date(planned_for, '+7 days') END,
+                    CASE WHEN due_on IS NULL THEN NULL ELSE date(due_on, '+7 days') END,
+                    repeat_weekday, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 0
+                 FROM tasks WHERE id = ?
+                 RETURNING id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed",
+            )
+            .bind(next_id)
+            .bind(&id)
+            .fetch_one(&mut *transaction)
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    transaction.commit().await?;
+    Ok(Json(ToggleResult { task, next_task }))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/tasks/{id}",
+    operation_id = "deleteTask",
+    params(("id" = String, Path, description = "Task id")),
+    responses(
+        (status = 204, description = "Deleted task"),
+        (status = 404, description = "Task not found", body = String),
+    ),
+    tag = "tasks"
+)]
+async fn delete_task(
+    Path(id): Path<String>,
+    State(db): State<SqlitePool>,
+) -> std::result::Result<StatusCode, AppError> {
+    let result = sqlx::query("DELETE FROM tasks WHERE id = ?")
+        .bind(id)
+        .execute(&db)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn crud_round_trip() {
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!().run(&db).await.unwrap();
+
+        let input = TaskInput {
+            id: "task-1".into(),
+            title: "Write test".into(),
+            project: "Inbox".into(),
+            planned_for: Some("2026-04-01".into()),
+            due_on: None,
+            repeat_weekday: Some(3),
+            completed: false,
+        };
+        let (_, Json(created)) = create_task(State(db.clone()), Json(input)).await.unwrap();
+        assert_eq!(created.title, "Write test");
+
+        let Json(result) = toggle_task(
+            Path(created.id.clone()),
+            State(db.clone()),
+            Json(ToggleInput { completed: true }),
+        )
+        .await
+        .unwrap();
+        assert!(result.task.completed);
+        let next = result.next_task.unwrap();
+        assert_eq!(next.planned_for.as_deref(), Some("2026-04-08"));
+
+        let update = TaskInput {
+            id: next.id.clone(),
+            title: "Updated test".into(),
+            project: next.project,
+            planned_for: next.planned_for,
+            due_on: next.due_on,
+            repeat_weekday: next.repeat_weekday,
+            completed: next.completed,
+        };
+        let Json(updated) = update_task(Path(next.id), State(db.clone()), Json(update))
+            .await
+            .unwrap();
+        let Json(fetched) = get_task(Path(updated.id.clone()), State(db.clone()))
+            .await
+            .unwrap();
+        assert_eq!(fetched.title, "Updated test");
+
+        delete_task(Path(created.id), State(db.clone()))
+            .await
+            .unwrap();
+        delete_task(Path(updated.id), State(db.clone()))
+            .await
+            .unwrap();
+        let Json(tasks) = list_tasks(State(db)).await.unwrap();
+        assert!(tasks.is_empty());
+    }
+}

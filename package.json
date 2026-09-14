@@ -5,16 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "bun run api:gen && vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "bun run api:gen && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "node --test",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "api:spec": "cargo run --quiet --manifest-path server/Cargo.toml -- --openapi > server/openapi.json",
+    "api:gen": "bun run api:spec && orval --config orval.config.ts"
   },
   "license": "MIT",
   "dependencies": {
+    "@tanstack/svelte-query": "^6.1.48",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2"
   },
@@ -22,10 +25,11 @@
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.65.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tauri-apps/cli": "^2",
+    "orval": "^8.33.0",
     "svelte": "^5.56.3",
     "svelte-check": "^4.6.0",
     "typescript": "~6.0.3",
-    "vite": "^8.0.16",
-    "@tauri-apps/cli": "^2"
+    "vite": "^8.0.16"
   }
 }

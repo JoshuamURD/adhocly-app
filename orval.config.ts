@@ -15,7 +15,23 @@ export default defineConfig({
         query: {
           useInvalidate: true,
           mutationInvalidates: [
-            { onMutations: ["createTask", "updateTask", "deleteTask", "toggleTask"], invalidates: ["listTasks"] },
+            {
+              onMutations: ["createTask", "updateTask", "deleteTask", "toggleTask"],
+              invalidates: ["listTasks"],
+            },
+            {
+              // Deleting a project moves its tasks to Inbox, so reload both lists.
+              onMutations: [
+                "createProject",
+                "updateProject",
+                "deleteProject",
+                "createMetadataField",
+                "updateMetadataField",
+                "deleteMetadataField",
+                "setProjectMetadata",
+              ],
+              invalidates: ["listProjects", "listTasks"],
+            },
           ],
         },
       },

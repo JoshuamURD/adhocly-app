@@ -5,6 +5,10 @@ use utoipa::OpenApi;
 
 use crate::{
     error::AppError,
+    projects::{
+        self, FieldKind, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValue,
+        MetadataValueInput, Project, ProjectInput,
+    },
     tasks::{self, Task, TaskInput, ToggleInput, ToggleResult},
 };
 
@@ -17,10 +21,36 @@ use crate::{
         tasks::create_task,
         tasks::update_task,
         tasks::toggle_task,
-        tasks::delete_task
+        tasks::delete_task,
+        projects::list_projects,
+        projects::get_project,
+        projects::create_project,
+        projects::update_project,
+        projects::delete_project,
+        projects::list_metadata_fields,
+        projects::create_metadata_field,
+        projects::update_metadata_field,
+        projects::delete_metadata_field,
+        projects::set_project_metadata
     ),
-    components(schemas(Task, TaskInput, ToggleInput, ToggleResult)),
-    tags((name = "tasks", description = "Task persistence API"))
+    components(schemas(
+        Task,
+        TaskInput,
+        ToggleInput,
+        ToggleResult,
+        Project,
+        ProjectInput,
+        MetadataField,
+        MetadataFieldInput,
+        MetadataFieldUpdate,
+        MetadataValue,
+        MetadataValueInput,
+        FieldKind
+    )),
+    tags(
+        (name = "tasks", description = "Task persistence API"),
+        (name = "projects", description = "Projects and their user-defined metadata")
+    )
 )]
 pub(crate) struct ApiDoc;
 
@@ -41,6 +71,29 @@ pub(crate) fn app(db: SqlitePool) -> Router {
         .route(
             "/api/tasks/{id}/toggle",
             axum::routing::post(tasks::toggle_task),
+        )
+        .route(
+            "/api/projects",
+            get(projects::list_projects).post(projects::create_project),
+        )
+        .route(
+            "/api/projects/{id}",
+            get(projects::get_project)
+                .put(projects::update_project)
+                .delete(projects::delete_project),
+        )
+        .route(
+            "/api/projects/{id}/metadata/{fieldId}",
+            axum::routing::put(projects::set_project_metadata),
+        )
+        .route(
+            "/api/metadata-fields",
+            get(projects::list_metadata_fields).post(projects::create_metadata_field),
+        )
+        .route(
+            "/api/metadata-fields/{id}",
+            axum::routing::put(projects::update_metadata_field)
+                .delete(projects::delete_metadata_field),
         )
         .layer(CorsLayer::permissive())
         .with_state(db)

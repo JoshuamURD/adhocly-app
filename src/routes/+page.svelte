@@ -1,11 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import ProjectMetadata from "$lib/ProjectMetadata.svelte";
   import { todaySection } from "$lib/task-views";
   import {
+    createCreateProject,
     createCreateTask,
     createDeleteTask,
+    createListMetadataFields,
+    createListProjects,
     createListTasks,
     createToggleTask,
+    type Project,
     type Task,
     type TaskInput,
   } from "$lib/api/generated";
@@ -26,15 +31,22 @@
   }
 
   const tasksQuery = createListTasks();
+  const projectsQuery = createListProjects();
+  const fieldsQuery = createListMetadataFields();
   const createTask = createCreateTask();
+  const createProjectMutation = createCreateProject();
   const toggleTaskMutation = createToggleTask();
   const deleteTaskMutation = createDeleteTask();
 
   let draft = $state("");
+  let newProjectName = $state("");
   let view = $state<"today" | "all" | "project">("today");
-  let activeProject = $state("Inbox");
+  let activeProjectId = $state("inbox");
+  let pendingProjectName = $state("");
+  let answerProject: ((approved: boolean) => void) | null = null;
   let drawer: HTMLDialogElement;
   let composer: HTMLDialogElement;
+  let confirmProject: HTMLDialogElement;
   let taskInput: HTMLInputElement;
   let now = $state(new Date());
   let notice = $state("");
@@ -45,25 +57,44 @@
   });
 
   const today = $derived(dateFromToday(0));
-  const viewTitle = $derived(view === "today" ? "Today" : view === "all" ? "All tasks" : activeProject);
   let showCompleted = $state(false);
 
   const tasks = $derived<Task[]>(tasksQuery.data?.data ?? []);
-  const loading = $derived(tasksQuery.isPending);
-  const busy = $derived(createTask.isPending || toggleTaskMutation.isPending || deleteTaskMutation.isPending);
-  const syncError = $derived(
-    errorMessage(tasksQuery.error ?? createTask.error ?? toggleTaskMutation.error ?? deleteTaskMutation.error),
-  );
-  const parsedDraft = $derived(parseTaskInput(draft));
-  const projects = $derived(
-    ["Inbox", ...new Set(tasks.map((task) => task.project).filter((project) => project !== "Inbox"))].sort((a, b) =>
-      a === "Inbox" ? -1 : b === "Inbox" ? 1 : a.localeCompare(b),
+  const fields = $derived(fieldsQuery.data?.data ?? []);
+  const projects = $derived<Project[]>(
+    [...(projectsQuery.data?.data ?? [])].sort((a, b) =>
+      a.name === "Inbox" ? -1 : b.name === "Inbox" ? 1 : a.name.localeCompare(b.name),
     ),
   );
+  const activeProject = $derived(projects.find((project) => project.id === activeProjectId) ?? projects[0]);
+  const viewTitle = $derived(
+    view === "today" ? "Today" : view === "all" ? "All tasks" : activeProject?.name ?? "Inbox",
+  );
+  const loading = $derived(tasksQuery.isPending);
+  const busy = $derived(
+    createTask.isPending ||
+      createProjectMutation.isPending ||
+      toggleTaskMutation.isPending ||
+      deleteTaskMutation.isPending,
+  );
+  const syncError = $derived(
+    errorMessage(
+      tasksQuery.error ??
+        projectsQuery.error ??
+        fieldsQuery.error ??
+        createTask.error ??
+        createProjectMutation.error ??
+        toggleTaskMutation.error ??
+        deleteTaskMutation.error,
+    ),
+  );
+  const parsedDraft = $derived(parseTaskInput(draft));
   const visibleTasks = $derived(
     tasks.filter(
       (task) =>
-        (view === "today" ? todaySection(task, today) !== null : view === "all" || task.project === activeProject) &&
+        (view === "today"
+          ? todaySection(task, today) !== null
+          : view === "all" || task.projectId === activeProjectId) &&
         (showCompleted || !task.completed),
     ),
   );
@@ -79,10 +110,51 @@
       : [{ title: "Your tasks", tasks: visibleTasks }],
   );
 
-  function navigate(next: typeof view, project = activeProject) {
+  function navigate(next: typeof view, projectId = activeProjectId) {
     view = next;
-    activeProject = project;
+    activeProjectId = projectId;
     drawer.close();
+  }
+
+  /** Resolves a `#project` name, asking before an unknown one is created. Returns null if declined. */
+  async function projectIdFor(name: string | null) {
+    if (!name) return activeProject?.id ?? "inbox";
+    const existing = projects.find((project) => project.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+
+    if (!(await askAboutProject(name))) return null;
+
+    const response = await createProjectMutation.mutateAsync({ data: { name } });
+    if (response.status !== 201) throw new Error(response.data);
+    return response.data.id;
+  }
+
+  function askAboutProject(name: string) {
+    pendingProjectName = name;
+    confirmProject.showModal();
+    return new Promise<boolean>((resolve) => (answerProject = resolve));
+  }
+
+  function settleProject(approved: boolean) {
+    const resolve = answerProject;
+    answerProject = null;
+    confirmProject.close();
+    resolve?.(approved);
+  }
+
+  async function addProject(event: SubmitEvent) {
+    event.preventDefault();
+    const name = newProjectName.trim();
+    if (!name || busy) return;
+
+    try {
+      const response = await createProjectMutation.mutateAsync({ data: { name } });
+      if (response.status !== 201) throw new Error(response.data);
+      newProjectName = "";
+      navigate("project", response.data.id);
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
   }
 
   function openComposer() {
@@ -97,25 +169,25 @@
     const parsed = parseTaskInput(draft);
     if (!parsed.title || busy) return;
 
-    const project = parsed.project
-      ? projects.find((name) => name.toLowerCase() === parsed.project?.toLowerCase()) ?? parsed.project
-      : view === "project" ? activeProject : "Inbox";
-    const task: TaskInput = {
-      id: crypto.randomUUID(),
-      title: parsed.title,
-      project,
-      plannedFor: parsed.plannedFor,
-      dueOn: parsed.dueOn,
-      repeatWeekday: parsed.repeatWeekday,
-      completed: false,
-    };
-
     try {
+      const projectId = await projectIdFor(parsed.project);
+      if (!projectId) return;
+      const projectName = projects.find((project) => project.id === projectId)?.name ?? parsed.project!;
+      const task: TaskInput = {
+        id: crypto.randomUUID(),
+        title: parsed.title,
+        projectId,
+        plannedFor: parsed.plannedFor,
+        dueOn: parsed.dueOn,
+        repeatWeekday: parsed.repeatWeekday,
+        completed: false,
+      };
+
       const response = await createTask.mutateAsync({ data: task });
       if (response.status !== 201) throw new Error(response.data);
       draft = "";
       composer.close();
-      notice = `Added “${task.title}” to ${project}.`;
+      notice = `Added “${task.title}” to ${projectName}.`;
     } catch {
       // The mutation exposes the error through syncError.
     }
@@ -142,8 +214,8 @@
     }
   }
 
-  function countFor(project: string) {
-    return tasks.filter((task) => !task.completed && task.project === project).length;
+  function countFor(projectId: string) {
+    return tasks.filter((task) => !task.completed && task.projectId === projectId).length;
   }
 
   function displayDate(value: string) {
@@ -205,6 +277,17 @@
     {/if}
     <p class="notice" role="status">{notice}</p>
 
+    {#if view === "project" && activeProject}
+      <ProjectMetadata
+        project={activeProject}
+        {fields}
+        onDeleted={() => {
+          navigate("all", "inbox");
+          notice = "Project deleted. Its tasks are in Inbox.";
+        }}
+      />
+    {/if}
+
     <section class="task-section" aria-label={`${viewTitle} tasks`}>
       {#if loading}
         <div class="empty-state" role="status"><p>Gathering your tasks…</p></div>
@@ -237,7 +320,7 @@
                   <div class="task-body">
                     <h3>{task.title}</h3>
                     <div class="metadata">
-                      <button class="project-name" onclick={() => navigate("project", task.project)}><span></span>{task.project}</button>
+                      <button class="project-name" onclick={() => navigate("project", task.projectId)}><span></span>{task.project}</button>
                       {#if task.plannedFor}
                         <span class="meta plan">↗ Plan {displayDate(task.plannedFor)}</span>
                       {/if}
@@ -292,11 +375,15 @@
         {@render icon("list")}<span>All tasks</span><em>{openCount}</em>
       </button>
       <p class="nav-label project-heading">Projects <span>#</span></p>
-      {#each projects as project (project)}
-        <button class:active={view === "project" && activeProject === project} aria-current={view === "project" && activeProject === project ? "page" : undefined} onclick={() => navigate("project", project)}>
-          <span class="project-dot" class:inbox={project === "Inbox"}></span><span class="project-label">{project}</span><em>{countFor(project)}</em>
+      {#each projects as project (project.id)}
+        <button class:active={view === "project" && activeProjectId === project.id} aria-current={view === "project" && activeProjectId === project.id ? "page" : undefined} onclick={() => navigate("project", project.id)}>
+          <span class="project-dot" class:inbox={project.id === "inbox"}></span><span class="project-label">{project.name}</span><em>{countFor(project.id)}</em>
         </button>
       {/each}
+      <form class="new-project" onsubmit={addProject}>
+        <input bind:value={newProjectName} placeholder="New project" aria-label="New project name" autocomplete="off" disabled={busy} />
+        <button type="submit" disabled={busy || !newProjectName.trim()} aria-label="Create project">+</button>
+      </form>
     </nav>
     <footer class="sidebar-footer"><span>#</span><p>Type <b>#project</b> in a new task to file it.</p></footer>
   </aside>
@@ -314,7 +401,7 @@
       <button class="submit-task" type="submit" aria-label="Add task" disabled={!parsedDraft.title || busy}>{@render icon("arrow")}</button>
     </form>
     <div class="syntax" aria-live="polite">
-      <span class="project-chip">#{parsedDraft.project || (view === "project" ? activeProject : "Inbox")}</span>
+      <span class="project-chip">#{parsedDraft.project || activeProject?.name || "Inbox"}</span>
       {#if parsedDraft.plannedFor}<span class="plan-chip">Plan · {displayDate(parsedDraft.plannedFor)}</span>{/if}
       {#if parsedDraft.dueOn}<span class="due-chip">Due · {displayDate(parsedDraft.dueOn)}</span>{/if}
       {#if parsedDraft.repeatWeekday != null}<span class="plan-chip">Every {weekdayNames[parsedDraft.repeatWeekday]}</span>{/if}
@@ -322,6 +409,22 @@
     </div>
     {#if syncError}<p class="sync-error" role="alert">{syncError}</p>{/if}
     <p id="capture-help" class="capture-help"><b>#project</b> to organise <span>·</span> <b>@today</b> to plan <span>·</span> <b>!friday</b> for a deadline <span>·</span> <b>@every friday</b> to repeat</p>
+  </section>
+</dialog>
+
+<dialog
+  bind:this={confirmProject}
+  class="confirm"
+  aria-labelledby="confirm-project-title"
+  onclose={() => settleProject(false)}
+>
+  <section class="confirm-body">
+    <h2 id="confirm-project-title">Create this project?</h2>
+    <p><span class="confirm-name">#{pendingProjectName}</span> doesn’t exist yet. Create it and file this task there?</p>
+    <div class="confirm-actions">
+      <button type="button" onclick={() => settleProject(false)} disabled={createProjectMutation.isPending}>Keep editing</button>
+      <button type="button" class="primary" onclick={() => settleProject(true)} disabled={createProjectMutation.isPending}>Create project</button>
+    </div>
   </section>
 </dialog>
 
@@ -435,6 +538,10 @@
   .project-label { overflow-wrap: anywhere; }
   .project-dot { width: 8px; height: 8px; margin-left: 6px; border-radius: 3px; background: #8ba6ac; }
   .project-dot.inbox { background: #d6a96d; }
+  .new-project { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 6px; margin-top: 10px; padding: 0 12px; }
+  .new-project input { min-width: 0; padding: 8px 10px; border: 1px solid #4b5442; border-radius: 7px; background: #ffffff0d; color: #f4f0e7; font-size: 12px; }
+  .new-project input::placeholder { color: #8f9787; }
+  .new-project button { border: 0; border-radius: 7px; background: #4b5442; color: #f4f0e7; font-size: 16px; }
   .sidebar-footer { display: flex; align-items: center; gap: 12px; margin-top: auto; padding: 32px 12px 0; color: #b0b6a7; font-size: 11px; line-height: 1.8; }
   .sidebar-footer > span { font-family: Georgia, serif; font-size: 28px; color: #ce9f77; }
   .sidebar-footer p { margin: 0; }
@@ -444,10 +551,10 @@
   .capture { padding: 26px; }
   .capture-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
   .capture h2 { margin: 0; font-family: Georgia, serif; font-size: 28px; font-weight: 400; letter-spacing: -.04em; }
-  form { display: flex; align-items: center; gap: 8px; padding: 5px; border: 1px solid #d8d7ca; border-radius: 12px; background: white; }
-  form:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px #60745b12; }
-  form input { width: 100%; min-width: 0; padding: 13px 10px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 16px; }
-  form input::placeholder { color: #929486; }
+  .capture form { display: flex; align-items: center; gap: 8px; padding: 5px; border: 1px solid #d8d7ca; border-radius: 12px; background: white; }
+  .capture form:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px #60745b12; }
+  .capture form input { width: 100%; min-width: 0; padding: 13px 10px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 16px; }
+  .capture form input::placeholder { color: #929486; }
   .submit-task { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; border-radius: 9px; background: var(--red); color: white; }
   .syntax { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 26px; margin-top: 14px; font-size: 11px; }
   .syntax > span { padding: 4px 8px; border-radius: 5px; overflow-wrap: anywhere; }
@@ -457,6 +564,15 @@
   .capture-help { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; color: var(--muted); font-size: 10px; line-height: 1.8; }
   .capture-help b { font-weight: 600; color: #5e6556; }
   .capture-help > span { padding: 0 5px; }
+  .confirm { width: min(400px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 16px; background: #fcfaf5; }
+  .confirm::backdrop { background: #20251d66; backdrop-filter: blur(3px); }
+  .confirm-body { padding: 24px; }
+  .confirm h2 { margin: 0 0 10px; font-family: Georgia, serif; font-size: 24px; font-weight: 400; letter-spacing: -.04em; }
+  .confirm p { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+  .confirm-name { color: var(--ink); font-weight: 600; }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .confirm-actions button { min-height: 40px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 9px; background: transparent; font-size: 12px; font-weight: 600; }
+  .confirm-actions .primary { border-color: transparent; background: var(--red); color: white; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   @keyframes arrive { from { opacity: 0; transform: translateY(10px); } }
   @keyframes drawer-in { from { transform: translateX(-100%); } }

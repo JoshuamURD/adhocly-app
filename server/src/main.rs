@@ -1,5 +1,6 @@
 mod db;
 mod error;
+mod projects;
 mod routes;
 mod tasks;
 

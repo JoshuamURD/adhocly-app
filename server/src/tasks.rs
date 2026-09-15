@@ -9,11 +9,17 @@ use utoipa::ToSchema;
 
 use crate::error::AppError;
 
+const TASK_SELECT_ONE: &str =
+    "SELECT t.*, p.name AS project FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?";
+const TASK_SELECT_ALL: &str = "SELECT t.*, p.name AS project FROM tasks t JOIN projects p ON p.id = t.project_id ORDER BY t.created_at DESC, t.id DESC";
+
 #[derive(Debug, Serialize, ToSchema, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Task {
     id: String,
     title: String,
+    project_id: String,
+    /// Name of the owning project, joined for display.
     project: String,
     planned_for: Option<String>,
     due_on: Option<String>,
@@ -28,7 +34,7 @@ pub(crate) struct Task {
 pub(crate) struct TaskInput {
     id: String,
     title: String,
-    project: String,
+    project_id: String,
     planned_for: Option<String>,
     due_on: Option<String>,
     repeat_weekday: Option<i64>,
@@ -54,13 +60,24 @@ fn validate_task(task: &TaskInput) -> std::result::Result<(), AppError> {
     if task.title.trim().is_empty() {
         return Err(AppError::Invalid("title is required"));
     }
-    if task.project.trim().is_empty() {
-        return Err(AppError::Invalid("project is required"));
+    if task.project_id.trim().is_empty() {
+        return Err(AppError::Invalid("projectId is required"));
     }
     if !matches!(task.repeat_weekday, None | Some(0..=6)) {
         return Err(AppError::Invalid("repeatWeekday must be between 0 and 6"));
     }
     Ok(())
+}
+
+async fn fetch_task<'e, E>(db: E, id: &str) -> std::result::Result<Task, AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    sqlx::query_as::<_, Task>(TASK_SELECT_ONE)
+        .bind(id)
+        .fetch_optional(db)
+        .await?
+        .ok_or(AppError::NotFound("task"))
 }
 
 #[utoipa::path(
@@ -73,7 +90,7 @@ fn validate_task(task: &TaskInput) -> std::result::Result<(), AppError> {
 pub(crate) async fn list_tasks(
     State(db): State<SqlitePool>,
 ) -> std::result::Result<Json<Vec<Task>>, AppError> {
-    let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC, id DESC")
+    let tasks = sqlx::query_as::<_, Task>(TASK_SELECT_ALL)
         .fetch_all(&db)
         .await?;
     Ok(Json(tasks))
@@ -94,12 +111,7 @@ pub(crate) async fn get_task(
     Path(id): Path<String>,
     State(db): State<SqlitePool>,
 ) -> std::result::Result<Json<Task>, AppError> {
-    let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    Ok(Json(task))
+    Ok(Json(fetch_task(&db, &id).await?))
 }
 
 #[utoipa::path(
@@ -118,22 +130,22 @@ pub(crate) async fn create_task(
     Json(task): Json<TaskInput>,
 ) -> std::result::Result<(StatusCode, Json<Task>), AppError> {
     validate_task(&task)?;
-    let saved = sqlx::query_as::<_, Task>(
+    sqlx::query(
         "INSERT INTO tasks (
-            id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-         ) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
-         RETURNING *",
+            id, title, project_id, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+         ) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)",
     )
-    .bind(task.id)
+    .bind(&task.id)
     .bind(task.title.trim())
-    .bind(task.project.trim())
+    .bind(task.project_id.trim())
     .bind(task.planned_for)
     .bind(task.due_on)
     .bind(task.repeat_weekday)
     .bind(task.completed)
-    .fetch_one(&db)
+    .execute(&db)
     .await?;
-    Ok((StatusCode::CREATED, Json(saved)))
+
+    Ok((StatusCode::CREATED, Json(fetch_task(&db, &task.id).await?)))
 }
 
 #[utoipa::path(
@@ -159,24 +171,26 @@ pub(crate) async fn update_task(
         return Err(AppError::Invalid("path and task ids must match"));
     }
 
-    let saved = sqlx::query_as::<_, Task>(
+    let result = sqlx::query(
         "UPDATE tasks SET
-            title = ?, project = ?, planned_for = ?, due_on = ?, repeat_weekday = ?,
+            title = ?, project_id = ?, planned_for = ?, due_on = ?, repeat_weekday = ?,
             completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE id = ?
-         RETURNING *",
+         WHERE id = ?",
     )
     .bind(task.title.trim())
-    .bind(task.project.trim())
+    .bind(task.project_id.trim())
     .bind(task.planned_for)
     .bind(task.due_on)
     .bind(task.repeat_weekday)
     .bind(task.completed)
-    .bind(id)
-    .fetch_optional(&db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    Ok(Json(saved))
+    .bind(&id)
+    .execute(&db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("task"));
+    }
+    Ok(Json(fetch_task(&db, &id).await?))
 }
 
 #[utoipa::path(
@@ -197,41 +211,34 @@ pub(crate) async fn toggle_task(
     Json(input): Json<ToggleInput>,
 ) -> std::result::Result<Json<ToggleResult>, AppError> {
     let mut transaction = db.begin().await?;
-    let current = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
-        .bind(&id)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let current = fetch_task(&mut *transaction, &id).await?;
 
-    let task = sqlx::query_as::<_, Task>(
-        "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE id = ?
-         RETURNING *",
+    sqlx::query(
+        "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
     )
     .bind(input.completed)
     .bind(&id)
-    .fetch_one(&mut *transaction)
+    .execute(&mut *transaction)
     .await?;
+    let task = fetch_task(&mut *transaction, &id).await?;
 
     let next_task = if !current.completed && input.completed && current.repeat_weekday.is_some() {
         let next_id = uuid::Uuid::now_v7().to_string();
-        Some(
-            sqlx::query_as::<_, Task>(
-                "INSERT INTO tasks (
-                    id, title, project, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-                 ) SELECT ?, title, project,
-                    CASE WHEN planned_for IS NULL THEN NULL ELSE date(planned_for, '+7 days') END,
-                    CASE WHEN due_on IS NULL THEN NULL ELSE date(due_on, '+7 days') END,
-                    repeat_weekday, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 0
-                 FROM tasks WHERE id = ?
-                 RETURNING *",
-            )
-            .bind(next_id)
-            .bind(&id)
-            .fetch_one(&mut *transaction)
-            .await?,
+        sqlx::query(
+            "INSERT INTO tasks (
+                id, title, project_id, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
+             ) SELECT ?, title, project_id,
+                CASE WHEN planned_for IS NULL THEN NULL ELSE date(planned_for, '+7 days') END,
+                CASE WHEN due_on IS NULL THEN NULL ELSE date(due_on, '+7 days') END,
+                repeat_weekday, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 0
+             FROM tasks WHERE id = ?",
         )
+        .bind(&next_id)
+        .bind(&id)
+        .execute(&mut *transaction)
+        .await?;
+        Some(fetch_task(&mut *transaction, &next_id).await?)
     } else {
         None
     };
@@ -260,7 +267,7 @@ pub(crate) async fn delete_task(
         .execute(&db)
         .await?;
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("task"));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -274,6 +281,7 @@ mod tests {
         task: &Task,
         id: &str,
         title: &str,
+        project_id: &str,
         project: &str,
         planned_for: Option<&str>,
         due_on: Option<&str>,
@@ -283,6 +291,7 @@ mod tests {
         let Task {
             id: actual_id,
             title: actual_title,
+            project_id: actual_project_id,
             project: actual_project,
             planned_for: actual_planned_for,
             due_on: actual_due_on,
@@ -294,6 +303,7 @@ mod tests {
 
         assert_eq!(actual_id, id);
         assert_eq!(actual_title, title);
+        assert_eq!(actual_project_id, project_id);
         assert_eq!(actual_project, project);
         assert_eq!(actual_planned_for.as_deref(), planned_for);
         assert_eq!(actual_due_on.as_deref(), due_on);
@@ -301,19 +311,31 @@ mod tests {
         assert_eq!(*actual_completed, completed);
     }
 
-    #[tokio::test]
-    async fn crud_round_trip() {
+    async fn test_db() -> SqlitePool {
         let db = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
             .unwrap();
         sqlx::migrate!().run(&db).await.unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, created_at, updated_at)
+             VALUES ('other', 'Other', '2026-01-01', '2026-01-01')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        db
+    }
+
+    #[tokio::test]
+    async fn crud_round_trip() {
+        let db = test_db().await;
 
         let input = TaskInput {
             id: "task-1".into(),
             title: "Write test".into(),
-            project: "Inbox".into(),
+            project_id: "inbox".into(),
             planned_for: Some("2026-04-01".into()),
             due_on: Some("2026-04-03".into()),
             repeat_weekday: Some(3),
@@ -324,6 +346,7 @@ mod tests {
             &created,
             "task-1",
             "Write test",
+            "inbox",
             "Inbox",
             Some("2026-04-01"),
             Some("2026-04-03"),
@@ -342,6 +365,7 @@ mod tests {
             &result.task,
             "task-1",
             "Write test",
+            "inbox",
             "Inbox",
             Some("2026-04-01"),
             Some("2026-04-03"),
@@ -353,6 +377,7 @@ mod tests {
             &next,
             &next.id,
             "Write test",
+            "inbox",
             "Inbox",
             Some("2026-04-08"),
             Some("2026-04-10"),
@@ -364,7 +389,7 @@ mod tests {
         let update = TaskInput {
             id: next_id.clone(),
             title: "Updated test".into(),
-            project: "Updated project".into(),
+            project_id: "other".into(),
             planned_for: Some("2026-05-01".into()),
             due_on: Some("2026-05-09".into()),
             repeat_weekday: Some(5),
@@ -377,7 +402,8 @@ mod tests {
             &updated,
             &updated.id,
             "Updated test",
-            "Updated project",
+            "other",
+            "Other",
             Some("2026-05-01"),
             Some("2026-05-09"),
             Some(5),
@@ -390,7 +416,8 @@ mod tests {
             &fetched,
             &updated.id,
             "Updated test",
-            "Updated project",
+            "other",
+            "Other",
             Some("2026-05-01"),
             Some("2026-05-09"),
             Some(5),
@@ -403,6 +430,25 @@ mod tests {
         delete_task(Path(updated.id), State(db.clone()))
             .await
             .unwrap();
+        let Json(tasks) = list_tasks(State(db)).await.unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_unknown_project() {
+        let db = test_db().await;
+        let input = TaskInput {
+            id: "task-1".into(),
+            title: "Write test".into(),
+            project_id: "nope".into(),
+            planned_for: None,
+            due_on: None,
+            repeat_weekday: None,
+            completed: false,
+        };
+        let error = create_task(State(db.clone()), Json(input)).await.unwrap_err();
+        assert_eq!(error.to_string(), "project does not exist");
+
         let Json(tasks) = list_tasks(State(db)).await.unwrap();
         assert!(tasks.is_empty());
     }

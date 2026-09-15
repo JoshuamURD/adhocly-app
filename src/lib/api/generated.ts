@@ -7,6 +7,7 @@
 import {
   createMutation,
   createQuery,
+  matchQuery,
   useQueryClient
 } from '@tanstack/svelte-query';
 import type {
@@ -24,6 +25,60 @@ import type {
 } from '@tanstack/svelte-query';
 
 import { apiFetch } from '../api-fetch';
+export type FieldKind = typeof FieldKind[keyof typeof FieldKind];
+
+
+export const FieldKind = {
+  text: 'text',
+  number: 'number',
+  choice: 'choice',
+} as const;
+
+export interface MetadataField {
+  createdAt: string;
+  id: string;
+  kind: FieldKind;
+  name: string;
+  options: string[];
+}
+
+export interface MetadataFieldInput {
+  kind: FieldKind;
+  name: string;
+  options?: string[];
+}
+
+export interface MetadataFieldUpdate {
+  name: string;
+  options?: string[];
+}
+
+export interface MetadataValue {
+  fieldId: string;
+  value: string;
+}
+
+export interface MetadataValueInput {
+  /**
+     * Omit or send null/blank to clear the value.
+     * @nullable
+     */
+  value?: string | null;
+}
+
+export interface Project {
+  createdAt: string;
+  id: string;
+  /** Loaded in a second query, never a column on `projects`. */
+  metadata: MetadataValue[];
+  name: string;
+  updatedAt: string;
+}
+
+export interface ProjectInput {
+  name: string;
+}
+
 export interface Task {
   completed: boolean;
   createdAt: string;
@@ -32,7 +87,9 @@ export interface Task {
   id: string;
   /** @nullable */
   plannedFor?: string | null;
+  /** Name of the owning project, joined for display. */
   project: string;
+  projectId: string;
   /** @nullable */
   repeatWeekday?: number | null;
   title: string;
@@ -46,7 +103,7 @@ export interface TaskInput {
   id: string;
   /** @nullable */
   plannedFor?: string | null;
-  project: string;
+  projectId: string;
   /** @nullable */
   repeatWeekday?: number | null;
   title: string;
@@ -64,6 +121,1041 @@ export interface ToggleResult {
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
+
+export type listMetadataFieldsResponse200 = {
+  data: MetadataField[]
+  status: 200
+}
+
+export type listMetadataFieldsResponseSuccess = (listMetadataFieldsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listMetadataFieldsResponse = (listMetadataFieldsResponseSuccess)
+
+export const getListMetadataFieldsUrl = () => {
+
+
+
+
+  return `/api/metadata-fields`
+}
+
+export const listMetadataFields = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listMetadataFieldsResponse> => {
+
+  return apiFetch<listMetadataFieldsResponse>(getListMetadataFieldsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMetadataFieldsQueryKey = () => {
+    return [
+    `/api/metadata-fields`
+    ] as const;
+    }
+
+
+export const getListMetadataFieldsQueryOptions = <TData = Awaited<ReturnType<typeof listMetadataFields>>, TError = unknown>( options?: { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof listMetadataFields>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMetadataFieldsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMetadataFields>>> = ({ signal }) => listMetadataFields({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as CreateQueryOptions<Awaited<ReturnType<typeof listMetadataFields>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMetadataFieldsQueryResult = NonNullable<Awaited<ReturnType<typeof listMetadataFields>>>
+export type ListMetadataFieldsQueryError = unknown
+
+
+
+export function createListMetadataFields<TData = Awaited<ReturnType<typeof listMetadataFields>>, TError = unknown>(
+  options?: () => { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof listMetadataFields>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient
+ ): CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+
+
+  const query = createQuery(() => getListMetadataFieldsQueryOptions(options?.()), queryClient) as CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return query
+}
+
+
+/**
+ * @summary Invalidates the {@link createListMetadataFields} query
+ */
+export const invalidateListMetadataFields = async (
+ queryClient: QueryClient,  options?: InvalidateOptions
+  ): Promise<QueryClient> => {
+
+  await queryClient.invalidateQueries({ queryKey: getListMetadataFieldsQueryKey() }, options);
+
+  return queryClient;
+}
+
+
+
+
+
+export type createMetadataFieldResponse201 = {
+  data: MetadataField
+  status: 201
+}
+
+export type createMetadataFieldResponse400 = {
+  data: string
+  status: 400
+}
+
+export type createMetadataFieldResponseSuccess = (createMetadataFieldResponse201) & {
+  headers: Headers;
+};
+export type createMetadataFieldResponseError = (createMetadataFieldResponse400) & {
+  headers: Headers;
+};
+
+export type createMetadataFieldResponse = (createMetadataFieldResponseSuccess | createMetadataFieldResponseError)
+
+export const getCreateMetadataFieldUrl = () => {
+
+
+
+
+  return `/api/metadata-fields`
+}
+
+export const createMetadataField = async (metadataFieldInput: MetadataFieldInput, options?: Parameters<typeof apiFetch>[1]): Promise<createMetadataFieldResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<createMetadataFieldResponse>(getCreateMetadataFieldUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(metadataFieldInput)
+  }
+);}
+
+
+
+
+
+export const getCreateMetadataFieldMutationKey = () => ['createMetadataField'] as const;
+
+export const getCreateMetadataFieldMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof createMetadataField>>, TError,CreateMetadataFieldMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof createMetadataField>>, TError,CreateMetadataFieldMutationVariables, TContext> => {
+
+const mutationKey = getCreateMetadataFieldMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMetadataField>>, CreateMetadataFieldMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createMetadataField(data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof createMetadataField>>, variables: CreateMetadataFieldMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type CreateMetadataFieldMutationResult = NonNullable<Awaited<ReturnType<typeof createMetadataField>>>
+    export type CreateMetadataFieldMutationBody = MetadataFieldInput
+    export type CreateMetadataFieldMutationError = string
+    export type CreateMetadataFieldMutationVariables = {data: MetadataFieldInput}
+
+    export const createCreateMetadataField = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof createMetadataField>>, TError,CreateMetadataFieldMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof createMetadataField>>,
+        TError,
+        CreateMetadataFieldMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getCreateMetadataFieldMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type updateMetadataFieldResponse200 = {
+  data: MetadataField
+  status: 200
+}
+
+export type updateMetadataFieldResponse400 = {
+  data: string
+  status: 400
+}
+
+export type updateMetadataFieldResponse404 = {
+  data: string
+  status: 404
+}
+
+export type updateMetadataFieldResponseSuccess = (updateMetadataFieldResponse200) & {
+  headers: Headers;
+};
+export type updateMetadataFieldResponseError = (updateMetadataFieldResponse400 | updateMetadataFieldResponse404) & {
+  headers: Headers;
+};
+
+export type updateMetadataFieldResponse = (updateMetadataFieldResponseSuccess | updateMetadataFieldResponseError)
+
+export const getUpdateMetadataFieldUrl = (id: string,) => {
+
+
+
+
+  return `/api/metadata-fields/${id}`
+}
+
+export const updateMetadataField = async (id: string,
+    metadataFieldUpdate: MetadataFieldUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateMetadataFieldResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<updateMetadataFieldResponse>(getUpdateMetadataFieldUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(metadataFieldUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateMetadataFieldMutationKey = () => ['updateMetadataField'] as const;
+
+export const getUpdateMetadataFieldMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof updateMetadataField>>, TError,UpdateMetadataFieldMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof updateMetadataField>>, TError,UpdateMetadataFieldMutationVariables, TContext> => {
+
+const mutationKey = getUpdateMetadataFieldMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMetadataField>>, UpdateMetadataFieldMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateMetadataField(id,data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof updateMetadataField>>, variables: UpdateMetadataFieldMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type UpdateMetadataFieldMutationResult = NonNullable<Awaited<ReturnType<typeof updateMetadataField>>>
+    export type UpdateMetadataFieldMutationBody = MetadataFieldUpdate
+    export type UpdateMetadataFieldMutationError = string
+    export type UpdateMetadataFieldMutationVariables = {id: string;data: MetadataFieldUpdate}
+
+    export const createUpdateMetadataField = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof updateMetadataField>>, TError,UpdateMetadataFieldMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof updateMetadataField>>,
+        TError,
+        UpdateMetadataFieldMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getUpdateMetadataFieldMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type deleteMetadataFieldResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteMetadataFieldResponse404 = {
+  data: string
+  status: 404
+}
+
+export type deleteMetadataFieldResponseSuccess = (deleteMetadataFieldResponse204) & {
+  headers: Headers;
+};
+export type deleteMetadataFieldResponseError = (deleteMetadataFieldResponse404) & {
+  headers: Headers;
+};
+
+export type deleteMetadataFieldResponse = (deleteMetadataFieldResponseSuccess | deleteMetadataFieldResponseError)
+
+export const getDeleteMetadataFieldUrl = (id: string,) => {
+
+
+
+
+  return `/api/metadata-fields/${id}`
+}
+
+export const deleteMetadataField = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<deleteMetadataFieldResponse> => {
+
+  return apiFetch<deleteMetadataFieldResponse>(getDeleteMetadataFieldUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteMetadataFieldMutationKey = () => ['deleteMetadataField'] as const;
+
+export const getDeleteMetadataFieldMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof deleteMetadataField>>, TError,DeleteMetadataFieldMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof deleteMetadataField>>, TError,DeleteMetadataFieldMutationVariables, TContext> => {
+
+const mutationKey = getDeleteMetadataFieldMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteMetadataField>>, DeleteMetadataFieldMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteMetadataField(id,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof deleteMetadataField>>, variables: DeleteMetadataFieldMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type DeleteMetadataFieldMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMetadataField>>>
+
+    export type DeleteMetadataFieldMutationError = string
+    export type DeleteMetadataFieldMutationVariables = {id: string}
+
+    export const createDeleteMetadataField = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof deleteMetadataField>>, TError,DeleteMetadataFieldMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof deleteMetadataField>>,
+        TError,
+        DeleteMetadataFieldMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getDeleteMetadataFieldMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type listProjectsResponse200 = {
+  data: Project[]
+  status: 200
+}
+
+export type listProjectsResponseSuccess = (listProjectsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listProjectsResponse = (listProjectsResponseSuccess)
+
+export const getListProjectsUrl = () => {
+
+
+
+
+  return `/api/projects`
+}
+
+export const listProjects = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listProjectsResponse> => {
+
+  return apiFetch<listProjectsResponse>(getListProjectsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProjectsQueryKey = () => {
+    return [
+    `/api/projects`
+    ] as const;
+    }
+
+
+export const getListProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listProjects>>, TError = unknown>( options?: { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProjectsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjects>>> = ({ signal }) => listProjects({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as CreateQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListProjectsQueryResult = NonNullable<Awaited<ReturnType<typeof listProjects>>>
+export type ListProjectsQueryError = unknown
+
+
+
+export function createListProjects<TData = Awaited<ReturnType<typeof listProjects>>, TError = unknown>(
+  options?: () => { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient
+ ): CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+
+
+  const query = createQuery(() => getListProjectsQueryOptions(options?.()), queryClient) as CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return query
+}
+
+
+/**
+ * @summary Invalidates the {@link createListProjects} query
+ */
+export const invalidateListProjects = async (
+ queryClient: QueryClient,  options?: InvalidateOptions
+  ): Promise<QueryClient> => {
+
+  await queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() }, options);
+
+  return queryClient;
+}
+
+
+
+
+
+export type createProjectResponse201 = {
+  data: Project
+  status: 201
+}
+
+export type createProjectResponse400 = {
+  data: string
+  status: 400
+}
+
+export type createProjectResponseSuccess = (createProjectResponse201) & {
+  headers: Headers;
+};
+export type createProjectResponseError = (createProjectResponse400) & {
+  headers: Headers;
+};
+
+export type createProjectResponse = (createProjectResponseSuccess | createProjectResponseError)
+
+export const getCreateProjectUrl = () => {
+
+
+
+
+  return `/api/projects`
+}
+
+export const createProject = async (projectInput: ProjectInput, options?: Parameters<typeof apiFetch>[1]): Promise<createProjectResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<createProjectResponse>(getCreateProjectUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(projectInput)
+  }
+);}
+
+
+
+
+
+export const getCreateProjectMutationKey = () => ['createProject'] as const;
+
+export const getCreateProjectMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,CreateProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,CreateProjectMutationVariables, TContext> => {
+
+const mutationKey = getCreateProjectMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProject>>, CreateProjectMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createProject(data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof createProject>>, variables: CreateProjectMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type CreateProjectMutationResult = NonNullable<Awaited<ReturnType<typeof createProject>>>
+    export type CreateProjectMutationBody = ProjectInput
+    export type CreateProjectMutationError = string
+    export type CreateProjectMutationVariables = {data: ProjectInput}
+
+    export const createCreateProject = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof createProject>>, TError,CreateProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof createProject>>,
+        TError,
+        CreateProjectMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getCreateProjectMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type getProjectResponse200 = {
+  data: Project
+  status: 200
+}
+
+export type getProjectResponse404 = {
+  data: string
+  status: 404
+}
+
+export type getProjectResponseSuccess = (getProjectResponse200) & {
+  headers: Headers;
+};
+export type getProjectResponseError = (getProjectResponse404) & {
+  headers: Headers;
+};
+
+export type getProjectResponse = (getProjectResponseSuccess | getProjectResponseError)
+
+export const getGetProjectUrl = (id: string,) => {
+
+
+
+
+  return `/api/projects/${id}`
+}
+
+export const getProject = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<getProjectResponse> => {
+
+  return apiFetch<getProjectResponse>(getGetProjectUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProjectQueryKey = (id: string,) => {
+    return [
+    `/api/projects/${id}`
+    ] as const;
+    }
+
+
+export const getGetProjectQueryOptions = <TData = Awaited<ReturnType<typeof getProject>>, TError = string>(id: string, options?: { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof getProject>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProjectQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProject>>> = ({ signal }) => getProject(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as CreateQueryOptions<Awaited<ReturnType<typeof getProject>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProjectQueryResult = NonNullable<Awaited<ReturnType<typeof getProject>>>
+export type GetProjectQueryError = string
+
+
+
+export function createGetProject<TData = Awaited<ReturnType<typeof getProject>>, TError = string>(
+ id: () =>  string, options?: () => { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof getProject>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient
+ ): CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+
+
+  const query = createQuery(() => getGetProjectQueryOptions(id(),options?.()), queryClient) as CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return query
+}
+
+
+/**
+ * @summary Invalidates the {@link createGetProject} query
+ */
+export const invalidateGetProject = async (
+ queryClient: QueryClient, id: string, options?: InvalidateOptions
+  ): Promise<QueryClient> => {
+
+  await queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }, options);
+
+  return queryClient;
+}
+
+
+
+
+
+export type updateProjectResponse200 = {
+  data: Project
+  status: 200
+}
+
+export type updateProjectResponse400 = {
+  data: string
+  status: 400
+}
+
+export type updateProjectResponse404 = {
+  data: string
+  status: 404
+}
+
+export type updateProjectResponseSuccess = (updateProjectResponse200) & {
+  headers: Headers;
+};
+export type updateProjectResponseError = (updateProjectResponse400 | updateProjectResponse404) & {
+  headers: Headers;
+};
+
+export type updateProjectResponse = (updateProjectResponseSuccess | updateProjectResponseError)
+
+export const getUpdateProjectUrl = (id: string,) => {
+
+
+
+
+  return `/api/projects/${id}`
+}
+
+export const updateProject = async (id: string,
+    projectInput: ProjectInput, options?: Parameters<typeof apiFetch>[1]): Promise<updateProjectResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<updateProjectResponse>(getUpdateProjectUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(projectInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateProjectMutationKey = () => ['updateProject'] as const;
+
+export const getUpdateProjectMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,UpdateProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,UpdateProjectMutationVariables, TContext> => {
+
+const mutationKey = getUpdateProjectMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProject>>, UpdateProjectMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateProject(id,data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof updateProject>>, variables: UpdateProjectMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type UpdateProjectMutationResult = NonNullable<Awaited<ReturnType<typeof updateProject>>>
+    export type UpdateProjectMutationBody = ProjectInput
+    export type UpdateProjectMutationError = string
+    export type UpdateProjectMutationVariables = {id: string;data: ProjectInput}
+
+    export const createUpdateProject = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,UpdateProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof updateProject>>,
+        TError,
+        UpdateProjectMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getUpdateProjectMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type deleteProjectResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteProjectResponse400 = {
+  data: string
+  status: 400
+}
+
+export type deleteProjectResponse404 = {
+  data: string
+  status: 404
+}
+
+export type deleteProjectResponseSuccess = (deleteProjectResponse204) & {
+  headers: Headers;
+};
+export type deleteProjectResponseError = (deleteProjectResponse400 | deleteProjectResponse404) & {
+  headers: Headers;
+};
+
+export type deleteProjectResponse = (deleteProjectResponseSuccess | deleteProjectResponseError)
+
+export const getDeleteProjectUrl = (id: string,) => {
+
+
+
+
+  return `/api/projects/${id}`
+}
+
+export const deleteProject = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<deleteProjectResponse> => {
+
+  return apiFetch<deleteProjectResponse>(getDeleteProjectUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteProjectMutationKey = () => ['deleteProject'] as const;
+
+export const getDeleteProjectMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,DeleteProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,DeleteProjectMutationVariables, TContext> => {
+
+const mutationKey = getDeleteProjectMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteProject>>, DeleteProjectMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteProject(id,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof deleteProject>>, variables: DeleteProjectMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type DeleteProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deleteProject>>>
+
+    export type DeleteProjectMutationError = string
+    export type DeleteProjectMutationVariables = {id: string}
+
+    export const createDeleteProject = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,DeleteProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof deleteProject>>,
+        TError,
+        DeleteProjectMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getDeleteProjectMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type setProjectMetadataResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setProjectMetadataResponse400 = {
+  data: string
+  status: 400
+}
+
+export type setProjectMetadataResponse404 = {
+  data: string
+  status: 404
+}
+
+export type setProjectMetadataResponseSuccess = (setProjectMetadataResponse204) & {
+  headers: Headers;
+};
+export type setProjectMetadataResponseError = (setProjectMetadataResponse400 | setProjectMetadataResponse404) & {
+  headers: Headers;
+};
+
+export type setProjectMetadataResponse = (setProjectMetadataResponseSuccess | setProjectMetadataResponseError)
+
+export const getSetProjectMetadataUrl = (id: string,
+    fieldId: string,) => {
+
+
+
+
+  return `/api/projects/${id}/metadata/${fieldId}`
+}
+
+export const setProjectMetadata = async (id: string,
+    fieldId: string,
+    metadataValueInput: MetadataValueInput, options?: Parameters<typeof apiFetch>[1]): Promise<setProjectMetadataResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<setProjectMetadataResponse>(getSetProjectMetadataUrl(id,fieldId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(metadataValueInput)
+  }
+);}
+
+
+
+
+
+export const getSetProjectMetadataMutationKey = () => ['setProjectMetadata'] as const;
+
+export const getSetProjectMetadataMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof setProjectMetadata>>, TError,SetProjectMetadataMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof setProjectMetadata>>, TError,SetProjectMetadataMutationVariables, TContext> => {
+
+const mutationKey = getSetProjectMetadataMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setProjectMetadata>>, SetProjectMetadataMutationVariables> = (props) => {
+          const {id,fieldId,data} = props ?? {};
+
+          return  setProjectMetadata(id,fieldId,data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof setProjectMetadata>>, variables: SetProjectMetadataMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type SetProjectMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof setProjectMetadata>>>
+    export type SetProjectMetadataMutationBody = MetadataValueInput
+    export type SetProjectMetadataMutationError = string
+    export type SetProjectMetadataMutationVariables = {id: string;fieldId: string;data: MetadataValueInput}
+
+    export const createSetProjectMetadata = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof setProjectMetadata>>, TError,SetProjectMetadataMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof setProjectMetadata>>,
+        TError,
+        SetProjectMetadataMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getSetProjectMetadataMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
 
 export type listTasksResponse200 = {
   data: Task[]

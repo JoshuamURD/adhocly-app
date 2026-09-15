@@ -87,10 +87,16 @@ export interface Reminder {
 export interface Task {
   completed: boolean;
   createdAt: string;
-  /** @nullable */
+  /**
+     * Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
+     * @nullable
+     */
   dueOn?: string | null;
   id: string;
-  /** @nullable */
+  /**
+     * Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
+     * @nullable
+     */
   plannedFor?: string | null;
   /** Name of the owning project, joined for display. */
   project: string;
@@ -103,10 +109,16 @@ export interface Task {
 
 export interface TaskInput {
   completed: boolean;
-  /** @nullable */
+  /**
+     * Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
+     * @nullable
+     */
   dueOn?: string | null;
   id: string;
-  /** @nullable */
+  /**
+     * Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
+     * @nullable
+     */
   plannedFor?: string | null;
   projectId: string;
   /** @nullable */

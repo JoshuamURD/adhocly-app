@@ -922,7 +922,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Local wall-clock date and time, `YYYY-MM-DDTHH:MM`."
           },
           "id": {
             "type": "string"
@@ -931,7 +932,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Local wall-clock date and time, `YYYY-MM-DDTHH:MM`."
           },
           "project": {
             "type": "string",
@@ -971,7 +973,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Local wall-clock date and time, `YYYY-MM-DDTHH:MM`."
           },
           "id": {
             "type": "string"
@@ -980,7 +983,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Local wall-clock date and time, `YYYY-MM-DDTHH:MM`."
           },
           "projectId": {
             "type": "string"

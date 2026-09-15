@@ -60,7 +60,7 @@
     </div>
     {#if store.error}<p class="rounded-lg bg-[#fbe8e0] px-[14px] py-3 text-xs wrap-anywhere text-[#a33828]" role="alert">{store.error}</p>{/if}
     <p class="mt-[18px] flex flex-wrap gap-1 text-[10px] leading-[1.8] text-muted" id="capture-help">
-      <b class="font-semibold text-[#5e6556]">#project</b> to organise <span class="px-[5px]">·</span> <b class="font-semibold text-[#5e6556]">@today</b> to plan <span class="px-[5px]">·</span> <b class="font-semibold text-[#5e6556]">!friday</b> for a deadline <span class="px-[5px]">·</span> <b class="font-semibold text-[#5e6556]">@every friday</b> to repeat
+      <b class="font-semibold text-[#5e6556]">#project</b> to organise <span class="px-[5px]">·</span> <b class="font-semibold text-[#5e6556]">@today 9am</b> to plan <span class="px-[5px]">·</span> <b class="font-semibold text-[#5e6556]">!friday 5pm</b> for a deadline <span class="px-[5px]">·</span> <b class="font-semibold text-[#5e6556]">@every friday</b> to repeat
     </p>
   </section>
 </dialog>

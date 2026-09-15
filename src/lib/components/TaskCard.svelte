@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Task } from "$lib/api/generated";
   import { useTasks } from "$lib/tasks.svelte";
-  import { displayDate, weekdayNames } from "$lib/task-views";
+  import { datePart, displayDate, weekdayNames } from "$lib/task-views";
   import Icon from "./Icon.svelte";
 
   let { task }: { task: Task } = $props();
@@ -33,7 +33,7 @@
         <span class="{meta} text-[#546e77]">↗ Plan {displayDate(task.plannedFor, store.state.now)}</span>
       {/if}
       {#if task.dueOn}
-        <span class="{meta} {task.dueOn < store.today ? "text-ember" : ""}">◇ Due {displayDate(task.dueOn, store.state.now)}</span>
+        <span class="{meta} {datePart(task.dueOn) < store.today ? "text-ember" : ""}">◇ Due {displayDate(task.dueOn, store.state.now)}</span>
       {/if}
       {#if task.repeatWeekday != null}
         <span class="{meta} text-[#546e77]">↻ Every {weekdayNames[task.repeatWeekday]}</span>

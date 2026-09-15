@@ -47,44 +47,27 @@
   }
 </script>
 
-<div class="field-row">
+<div class="mb-2 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-[6px] border-b border-line pb-[10px]">
   <input
-    class="field-name"
+    class="col-start-1 min-h-[34px] w-full rounded-lg border border-line bg-white px-[10px] py-2 text-[13px] text-ink focus:border-sage"
     bind:value={name}
     disabled={busy}
     aria-label={`${field.name} name`}
   />
-  <span class="kind">{field.kind}</span>
-  <button class="remove" type="button" onclick={onRemove} disabled={busy} aria-label={`Remove ${field.name}`}>Remove</button>
+  <span class="col-start-2 text-[10px] tracking-[.1em] text-muted uppercase">{field.kind}</span>
+  <button class="col-start-3 border-0 bg-transparent px-2 py-1 text-[11px] text-[#9a8a7d] enabled:hover:text-ember" type="button" onclick={onRemove} disabled={busy} aria-label={`Remove ${field.name}`}>Remove</button>
 
   {#if choice}
-    <div class="field-options">
+    <div class="col-span-full">
       <OptionRows bind:options disabled={busy} />
-      <p class="hint">{hint}</p>
+      <p class="mt-[5px] mb-0 text-[11px] leading-[1.6] text-muted">{hint}</p>
     </div>
   {/if}
 
   {#if dirty}
-    <div class="field-actions">
-      <button class="save" type="button" onclick={save} disabled={busy || invalid}>Save</button>
-      <button class="cancel" type="button" onclick={cancel} disabled={busy}>Cancel</button>
+    <div class="col-span-full mt-2 flex gap-[6px]">
+      <button class="rounded-lg border-0 bg-sage px-3 py-[7px] text-xs font-semibold text-white" type="button" onclick={save} disabled={busy || invalid}>Save</button>
+      <button class="rounded-lg border border-line bg-transparent px-3 py-[7px] text-xs font-semibold text-muted" type="button" onclick={cancel} disabled={busy}>Cancel</button>
     </div>
   {/if}
 </div>
-
-<style>
-  .field-row {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px;
-    margin-bottom: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
-  }
-  .field-name { grid-column: 1; }
-  .kind { grid-column: 2; color: var(--muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
-  .remove { grid-column: 3; padding: 4px 8px; border: 0; background: transparent; color: #9a8a7d; font-size: 11px; }
-  .remove:not(:disabled):hover { color: var(--red); }
-  .field-options { grid-column: 1 / -1; }
-  .field-options .hint { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-  .field-actions { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 8px; }
-  .field-actions button { padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; }
-  .save { border: 0; background: var(--green); color: white; }
-  .cancel { border: 1px solid var(--line); background: transparent; color: var(--muted); }
-</style>

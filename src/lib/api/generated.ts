@@ -79,6 +79,11 @@ export interface ProjectInput {
   name: string;
 }
 
+export interface Reminder {
+  remindAt: string;
+  taskId: string;
+}
+
 export interface Task {
   completed: boolean;
   createdAt: string;
@@ -1156,6 +1161,107 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       const backupQueryClient = useQueryClient(queryClient?.());
       return createMutation(() => ({ ...getSetProjectMetadataMutationOptions(backupQueryClient, options?.()) }), queryClient);
     }
+
+export type getReminderResponse200 = {
+  data: Reminder
+  status: 200
+}
+
+export type getReminderResponse404 = {
+  data: string
+  status: 404
+}
+
+export type getReminderResponseSuccess = (getReminderResponse200) & {
+  headers: Headers;
+};
+export type getReminderResponseError = (getReminderResponse404) & {
+  headers: Headers;
+};
+
+export type getReminderResponse = (getReminderResponseSuccess | getReminderResponseError)
+
+export const getGetReminderUrl = (id: string,) => {
+
+
+
+
+  return `/api/reminders/${id}`
+}
+
+export const getReminder = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<getReminderResponse> => {
+
+  return apiFetch<getReminderResponse>(getGetReminderUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetReminderQueryKey = (id: string,) => {
+    return [
+    `/api/reminders/${id}`
+    ] as const;
+    }
+
+
+export const getGetReminderQueryOptions = <TData = Awaited<ReturnType<typeof getReminder>>, TError = string>(id: string, options?: { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof getReminder>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReminderQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReminder>>> = ({ signal }) => getReminder(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as CreateQueryOptions<Awaited<ReturnType<typeof getReminder>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetReminderQueryResult = NonNullable<Awaited<ReturnType<typeof getReminder>>>
+export type GetReminderQueryError = string
+
+
+
+export function createGetReminder<TData = Awaited<ReturnType<typeof getReminder>>, TError = string>(
+ id: () =>  string, options?: () => { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof getReminder>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient
+ ): CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+
+
+  const query = createQuery(() => getGetReminderQueryOptions(id(),options?.()), queryClient) as CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return query
+}
+
+
+/**
+ * @summary Invalidates the {@link createGetReminder} query
+ */
+export const invalidateGetReminder = async (
+ queryClient: QueryClient, id: string, options?: InvalidateOptions
+  ): Promise<QueryClient> => {
+
+  await queryClient.invalidateQueries({ queryKey: getGetReminderQueryKey(id) }, options);
+
+  return queryClient;
+}
+
+
+
+
 
 export type listTasksResponse200 = {
   data: Task[]

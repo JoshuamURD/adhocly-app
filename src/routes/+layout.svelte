@@ -1,6 +1,8 @@
 <script lang="ts">
+  import "../app.css";
   import { onMount } from "svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
+  import AppShell from "$lib/components/AppShell.svelte";
   import { isZoomShortcut } from "$lib/zoom";
 
   const queryClient = new QueryClient();
@@ -32,10 +34,5 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-  {@render children()}
+  <AppShell>{@render children()}</AppShell>
 </QueryClientProvider>
-
-<style>
-  /* Pinch and double-tap zoom both need the whole ancestor chain to allow them. */
-  :global(html), :global(body) { touch-action: pan-x pan-y; }
-</style>

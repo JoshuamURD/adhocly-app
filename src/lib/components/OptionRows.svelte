@@ -35,10 +35,11 @@
   }
 </script>
 
-<div class="options" bind:this={list}>
+<div class="grid gap-[2px] rounded-lg border border-line bg-white p-[6px]" bind:this={list}>
   {#each options as option, index (index)}
-    <div class="option-row">
+    <div class="option-row grid grid-cols-[minmax(0,1fr)_auto] items-center gap-[2px]">
       <input
+        class="rounded-md border border-transparent bg-transparent px-2 py-[6px] hover:border-line focus:border-sage focus:bg-white"
         value={option}
         {disabled}
         placeholder="Option"
@@ -48,7 +49,7 @@
       />
       <button
         type="button"
-        class="remove-option"
+        class="size-[26px] rounded-md border-0 bg-transparent p-0 text-[15px] leading-none text-[#b3a89c] enabled:hover:bg-[#fbe8e0] enabled:hover:text-ember"
         disabled={disabled || options.length === 1}
         onclick={() => (options = options.filter((_, row) => row !== index))}
         aria-label={`Remove option ${index + 1}`}
@@ -58,23 +59,5 @@
     </div>
   {/each}
 
-  <button type="button" class="add-option" {disabled} onclick={() => void add()}>+ Add option</button>
+  <button type="button" class="mt-[2px] justify-self-start rounded-md border-0 bg-transparent px-2 py-[5px] text-xs font-semibold text-sage enabled:hover:bg-[#edefe3]" {disabled} onclick={() => void add()}>+ Add option</button>
 </div>
-
-<style>
-  .options { display: grid; gap: 2px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: white; }
-  .option-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px; }
-  .option-row input { padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
-  .option-row input:hover { border-color: var(--line); }
-  .option-row input:focus { border-color: var(--green); background: white; }
-  .remove-option {
-    width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent;
-    color: #b3a89c; font-size: 15px; line-height: 1;
-  }
-  .remove-option:not(:disabled):hover { color: var(--red); background: #fbe8e0; }
-  .add-option {
-    justify-self: start; margin-top: 2px; padding: 5px 8px; border: 0; border-radius: 6px;
-    background: transparent; color: var(--green); font-size: 12px; font-weight: 600;
-  }
-  .add-option:not(:disabled):hover { background: #edefe3; }
-</style>

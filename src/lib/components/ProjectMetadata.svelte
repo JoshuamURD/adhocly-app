@@ -10,8 +10,8 @@
     type MetadataField,
     type Project,
   } from "$lib/api/generated";
-  import FieldRow from "$lib/FieldRow.svelte";
-  import OptionRows from "$lib/OptionRows.svelte";
+  import FieldRow from "$lib/components/FieldRow.svelte";
+  import OptionRows from "$lib/components/OptionRows.svelte";
   import { choiceOptions, isValidValue, normalizeOptions, valueFor } from "$lib/metadata";
 
   let { project, fields, onDeleted }: { project: Project; fields: MetadataField[]; onDeleted: () => void } =
@@ -47,7 +47,14 @@
       removeField.isPending,
   );
 
-  function message(reason: unknown) {
+  const fieldInput =
+    "w-full min-h-[34px] rounded-lg border border-line bg-[#fdfbf6] px-[9px] py-[6px] text-[13px] text-ink focus:border-sage";
+  const settingInput =
+    "rounded-lg border border-line bg-white px-[10px] py-2 text-[13px] text-ink";
+  const textButton = "min-h-11 border-0 bg-transparent px-[10px] text-[11px] font-semibold text-ember";
+  const message = "mt-[10px] text-[11px]";
+
+  function reason(reason: unknown) {
     if (!reason) return "";
     return reason instanceof Error ? reason.message : String(reason);
   }
@@ -58,8 +65,8 @@
     try {
       await action();
       notice = done;
-    } catch (reason) {
-      error = message(reason);
+    } catch (caught) {
+      error = reason(caught);
     }
   }
 
@@ -127,24 +134,25 @@
   }
 </script>
 
-<section class="project-metadata" aria-label="Project metadata">
-  <header class="metadata-heading">
-    <h2>Details</h2>
-    <button class="text-button" onclick={() => { error = ""; settings.showModal(); }} disabled={busy}>
+<section class="mb-[30px]" aria-label="Project metadata">
+  <header class="flex items-center justify-between gap-4">
+    <h2 class="m-0 text-[10px] font-semibold tracking-[.14em] text-muted uppercase">Details</h2>
+    <button class={textButton} onclick={() => { error = ""; settings.showModal(); }} disabled={busy}>
       Fields <span aria-hidden="true">#</span>
     </button>
   </header>
 
   {#if fields.length === 0}
-    <p class="metadata-empty">No fields yet. Add one to track what matters for every project.</p>
+    <p class="mt-1 mb-0 text-xs text-muted">No fields yet. Add one to track what matters for every project.</p>
   {:else}
-    <dl class="value-list">
+    <dl class="mt-[6px] mb-0 grid grid-cols-[minmax(90px,160px)_minmax(0,1fr)] gap-x-4 gap-y-[6px] max-[600px]:grid-cols-1 max-[600px]:gap-1">
       {#each fields as field (field.id)}
-        <div class="value-row">
-          <dt><label for={`value-${project.id}-${field.id}`}>{field.name}</label></dt>
-          <dd>
+        <div class="contents">
+          <dt class="flex min-h-[34px] items-center text-[11px] text-muted wrap-anywhere max-[600px]:min-h-0 max-[600px]:pt-[6px]"><label for={`value-${project.id}-${field.id}`}>{field.name}</label></dt>
+          <dd class="m-0">
             {#if field.kind === "choice"}
               <select
+                class={fieldInput}
                 id={`value-${project.id}-${field.id}`}
                 value={valueFor(project, field.id)}
                 disabled={busy}
@@ -157,6 +165,7 @@
               </select>
             {:else}
               <input
+                class={fieldInput}
                 id={`value-${project.id}-${field.id}`}
                 type={field.kind === "number" ? "number" : "text"}
                 value={valueFor(project, field.id)}
@@ -171,26 +180,26 @@
     </dl>
   {/if}
 
-  {#if error}<p class="metadata-error" role="alert">{error}</p>{/if}
-  {#if notice}<p class="metadata-notice" role="status">{notice}</p>{/if}
+  {#if error}<p class="{message} text-[#a33828]" role="alert">{error}</p>{/if}
+  {#if notice}<p class="{message} text-sage" role="status">{notice}</p>{/if}
 </section>
 
-<dialog bind:this={settings} class="settings" aria-labelledby="settings-title">
-  <section class="settings-body">
-    <header class="settings-heading">
-      <h2 id="settings-title">Project settings</h2>
-      <button class="text-button" onclick={() => settings.close()} aria-label="Close project settings">
+<dialog bind:this={settings} class="m-auto w-[min(560px,calc(100%_-_32px))] max-h-[calc(100dvh_-_40px)] overflow-auto rounded-2xl border border-line bg-[#fcfaf5] text-ink" aria-labelledby="settings-title">
+  <section class="p-6">
+    <header class="mb-[18px] flex items-center justify-between gap-3">
+      <h2 class="m-0 font-display text-2xl font-normal tracking-[-.04em]" id="settings-title">Project settings</h2>
+      <button class={textButton} onclick={() => settings.close()} aria-label="Close project settings">
         Close
       </button>
     </header>
 
-    <label class="name-field">
+    <label class="grid gap-[5px] text-[11px] text-muted">
       <span>Name</span>
-      <input value={project.name} disabled={busy} onblur={rename} />
+      <input class={settingInput} value={project.name} disabled={busy} onblur={rename} />
     </label>
 
-    <h3>Fields</h3>
-    <p class="hint">Fields are shared by every project; their type is fixed once created.</p>
+    <h3 class="mt-6 mb-[2px] text-[11px] font-bold tracking-[.12em] uppercase">Fields</h3>
+    <p class="mb-[10px] text-[11px] leading-[1.7] text-muted">Fields are shared by every project; their type is fixed once created.</p>
 
     {#each fields as field (field.id)}
       <FieldRow
@@ -202,73 +211,29 @@
       />
     {/each}
 
-    <form class="add-field" onsubmit={addField}>
-      <div class="add-field-head">
-        <input bind:value={newFieldName} placeholder="New field" aria-label="New field name" disabled={busy} />
-        <select bind:value={newFieldKind} aria-label="New field type" disabled={busy}>
+    <form class="mt-[10px] grid gap-2" onsubmit={addField}>
+      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-[6px]">
+        <input class={settingInput} bind:value={newFieldName} placeholder="New field" aria-label="New field name" disabled={busy} />
+        <select class={settingInput} bind:value={newFieldKind} aria-label="New field type" disabled={busy}>
           {#each kinds as kind (kind)}<option value={kind}>{kind}</option>{/each}
         </select>
       </div>
       {#if newFieldKind === "choice"}
-        <p class="hint">Options — Enter for the next one, Tab to finish.</p>
+        <p class="m-0 text-[11px] leading-[1.7] text-muted">Options — Enter for the next one, Tab to finish.</p>
         <OptionRows bind:options={newFieldOptions} disabled={busy} />
       {/if}
-      <button type="submit" disabled={busy || !canAdd}>Add field</button>
+      <button class="justify-self-end rounded-lg border-0 bg-sage px-[14px] py-[9px] text-xs font-semibold text-white" type="submit" disabled={busy || !canAdd}>Add field</button>
     </form>
 
     {#if project.id !== "inbox"}
-      <footer class="settings-footer">
-        <button class="delete-project" onclick={deleteProject} disabled={busy}>
+      <footer class="mt-7 grid gap-1 border-t border-line pt-[18px]">
+        <button class="justify-self-start rounded-lg border border-[#e5c4b8] bg-[#fbe8e0] px-3 py-2 text-xs text-[#a33828]" onclick={deleteProject} disabled={busy}>
           Delete project
         </button>
-        <p>Its tasks move to Inbox; its metadata is removed.</p>
+        <p class="m-0 text-[11px] text-muted">Its tasks move to Inbox; its metadata is removed.</p>
       </footer>
     {/if}
 
-    {#if error}<p class="metadata-error" role="alert">{error}</p>{/if}
+    {#if error}<p class="{message} text-[#a33828]" role="alert">{error}</p>{/if}
   </section>
 </dialog>
-
-<style>
-  .project-metadata { margin-bottom: 30px; }
-  .metadata-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-  .metadata-heading h2 { margin: 0; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
-  .text-button { min-height: 44px; padding: 0 10px; border: 0; background: transparent; color: var(--red); font-size: 11px; font-weight: 600; }
-  .metadata-empty { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-  .value-list { display: grid; grid-template-columns: minmax(90px, 160px) minmax(0, 1fr); gap: 6px 16px; margin: 6px 0 0; }
-  .value-row { display: contents; }
-  .value-list dt { display: flex; align-items: center; min-height: 34px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-  .value-list dd { margin: 0; }
-  .value-list input, .value-list select {
-    width: 100%; min-height: 34px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px;
-    background: #fdfbf6; color: var(--ink); font-size: 13px;
-  }
-  .value-list input:focus, .value-list select:focus { border-color: var(--green); }
-  .metadata-error { margin: 10px 0 0; color: #a33828; font-size: 11px; }
-  .metadata-notice { margin: 10px 0 0; color: var(--green); font-size: 11px; }
-  .settings {
-    width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 40px); padding: 0; overflow: auto;
-    border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: #fcfaf5;
-  }
-  .settings::backdrop { background: #20251d66; backdrop-filter: blur(3px); }
-  .settings-body { padding: 24px; }
-  .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-  .settings h2 { margin: 0; font-family: Georgia, serif; font-size: 24px; font-weight: 400; letter-spacing: -.04em; }
-  .settings h3 { margin: 24px 0 2px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
-  .hint { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.7; }
-  .name-field { display: grid; gap: 5px; font-size: 11px; color: var(--muted); }
-  .settings input, .settings select {
-    padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font-size: 13px;
-  }
-  .add-field { display: grid; gap: 8px; margin-top: 10px; }
-  .add-field .hint { margin: 0; }
-  .add-field-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
-  .add-field button { justify-self: end; padding: 9px 14px; border: 0; border-radius: 8px; background: var(--green); color: white; font-size: 12px; font-weight: 600; }
-  .settings-footer { display: grid; gap: 4px; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
-  .delete-project { justify-self: start; padding: 8px 12px; border: 1px solid #e5c4b8; border-radius: 8px; background: #fbe8e0; color: #a33828; font-size: 12px; }
-  .settings-footer p { margin: 0; color: var(--muted); font-size: 11px; }
-  @media (max-width: 600px) {
-    .value-list { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-    .value-list dt { min-height: 0; padding-top: 6px; }
-  }
-</style>

@@ -10,7 +10,9 @@ pub(crate) struct Task {
     pub(crate) project_id: String,
     /// Name of the owning project, joined for display.
     pub(crate) project: String,
+    /// Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
     pub(crate) planned_for: Option<String>,
+    /// Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
     pub(crate) due_on: Option<String>,
     pub(crate) repeat_weekday: Option<i64>,
     pub(crate) created_at: String,
@@ -24,7 +26,9 @@ pub(crate) struct TaskInput {
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) project_id: String,
+    /// Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
     pub(crate) planned_for: Option<String>,
+    /// Local wall-clock date and time, `YYYY-MM-DDTHH:MM`.
     pub(crate) due_on: Option<String>,
     pub(crate) repeat_weekday: Option<i64>,
     pub(crate) completed: bool,

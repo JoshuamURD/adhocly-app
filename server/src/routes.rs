@@ -9,6 +9,8 @@ use crate::{
         self, FieldKind, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValue,
         MetadataValueInput, Project, ProjectInput,
     },
+    reminders::{self, Reminder},
+    state::AppState,
     tasks::{self, Task, TaskInput, ToggleInput, ToggleResult},
 };
 
@@ -31,7 +33,8 @@ use crate::{
         projects::create_metadata_field,
         projects::update_metadata_field,
         projects::delete_metadata_field,
-        projects::set_project_metadata
+        projects::set_project_metadata,
+        reminders::get_reminder
     ),
     components(schemas(
         Task,
@@ -45,11 +48,13 @@ use crate::{
         MetadataFieldUpdate,
         MetadataValue,
         MetadataValueInput,
-        FieldKind
+        FieldKind,
+        Reminder
     )),
     tags(
         (name = "tasks", description = "Task persistence API"),
-        (name = "projects", description = "Projects and their user-defined metadata")
+        (name = "projects", description = "Projects and their user-defined metadata"),
+        (name = "reminders", description = "Task reminders")
     )
 )]
 pub(crate) struct ApiDoc;
@@ -95,8 +100,9 @@ pub(crate) fn app(db: SqlitePool) -> Router {
             axum::routing::put(projects::update_metadata_field)
                 .delete(projects::delete_metadata_field),
         )
+        .route("/api/reminders/{id}", get(reminders::get_reminder))
         .layer(CorsLayer::permissive())
-        .with_state(db)
+        .with_state(AppState::new(db))
 }
 
 async fn openapi() -> Json<utoipa::openapi::OpenApi> {
@@ -114,8 +120,8 @@ async fn openapi() -> Json<utoipa::openapi::OpenApi> {
     tag = "tasks"
 )]
 async fn health(
-    axum::extract::State(db): axum::extract::State<SqlitePool>,
+    axum::extract::State(state): axum::extract::State<AppState>,
 ) -> std::result::Result<StatusCode, AppError> {
-    sqlx::query("SELECT 1").execute(&db).await?;
+    sqlx::query("SELECT 1").execute(state.pool()).await?;
     Ok(StatusCode::OK)
 }

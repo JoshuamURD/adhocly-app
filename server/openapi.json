@@ -429,6 +429,47 @@
         }
       }
     },
+    "/api/reminders/{id}": {
+      "get": {
+        "tags": [
+          "reminders"
+        ],
+        "operationId": "getReminder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Reminder id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reminder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reminder"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Reminder not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks": {
       "get": {
         "tags": [
@@ -844,6 +885,21 @@
           }
         }
       },
+      "Reminder": {
+        "type": "object",
+        "required": [
+          "remindAt",
+          "taskId"
+        ],
+        "properties": {
+          "remindAt": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        }
+      },
       "Task": {
         "type": "object",
         "required": [
@@ -983,6 +1039,10 @@
     {
       "name": "projects",
       "description": "Projects and their user-defined metadata"
+    },
+    {
+      "name": "reminders",
+      "description": "Task reminders"
     }
   ]
 }

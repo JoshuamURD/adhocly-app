@@ -1,0 +1,5 @@
+CREATE TABLE task_reminders (
+  id TEXT PRIMARY KEY NOT NULL,
+  remind_at TEXT NOT NULL,
+  task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE
+);

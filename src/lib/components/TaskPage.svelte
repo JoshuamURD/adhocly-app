@@ -30,8 +30,7 @@
   <meta name="description" content="Make room for today. A thoughtful task list with quick, natural-language capture." />
 </svelte:head>
 
-<header class="mb-[30px] flex items-center justify-between gap-6 max-[600px]:mb-[22px] max-[600px]:gap-3">
-  <h1 class="m-0 font-display text-[clamp(34px,6vw,52px)] leading-[1.1] font-normal tracking-[-.055em] wrap-anywhere">{title}<span class="text-ember">.</span></h1>
+<header class="mb-[30px] flex items-center justify-end gap-6 max-[600px]:mb-[22px] max-[600px]:gap-3">
   <div class="flex items-center gap-5 max-[600px]:gap-[14px]">
     <label class="flex min-h-11 cursor-pointer items-center gap-[7px] text-[11px] text-muted max-[600px]:text-[10px]">
       <input class="m-0 size-[14px] accent-sage" type="checkbox" bind:checked={store.state.showCompleted} />

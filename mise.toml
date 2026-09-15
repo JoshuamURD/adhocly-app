@@ -1,10 +1,34 @@
 [tools]
 bun = "1.4"
 rust = "stable"
+# `cargo sqlx migrate run` prepares the schema database that the query_file! macros check
+# against while compiling. Remove this tool and the macros stop being compile-checked.
+"cargo:sqlx-cli" = "0.9"
 
 [tasks."api:gen"]
 description = "Regenerate OpenAPI and Orval client"
 run = "bun run api:gen"
+
+[tasks."db:schema"]
+description = "Rebuild the schema database sqlx checks queries against at compile time"
+dir = "server"
+run = '''
+db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
+mkdir -p "$(dirname "$db")"
+rm -f "$db"
+DATABASE_URL="sqlite://$db?mode=rwc" cargo sqlx migrate run
+# cargo cannot see that the schema changed, so force the query check to re-run.
+touch src/main.rs
+'''
+
+[tasks.test]
+description = "Run the server test suite"
+dir = "server"
+depends = ["db:schema"]
+run = '''
+db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
+DATABASE_URL="sqlite://$db" cargo test
+'''
 
 [tasks.server]
 description = "Run the SQLite API"
@@ -14,7 +38,11 @@ db_dir="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly"
 db="$db_dir/adhocly.db"
 mkdir -p "$db_dir"
 [ -f "$db" ] || [ ! -f adhocly.db ] || cp adhocly.db "$db"
-DATABASE_URL="sqlite://$db?mode=rwc" cargo run
+export DATABASE_URL="sqlite://$db?mode=rwc"
+# Migrate before compiling: the query_file! macros introspect DATABASE_URL, so a fresh database
+# cannot build without its schema in place. sqlx-cli also records the migration bookkeeping.
+cargo sqlx migrate run
+cargo run
 '''
 
 [tasks."mobile:ios"]

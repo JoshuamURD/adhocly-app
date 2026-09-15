@@ -30,7 +30,7 @@ db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
 DATABASE_URL="sqlite://$db" cargo test
 '''
 
-[tasks.server]
+[tasks."api:serve"]
 description = "Run the SQLite API"
 dir = "server"
 run = '''
@@ -44,6 +44,15 @@ export DATABASE_URL="sqlite://$db?mode=rwc"
 cargo sqlx migrate run
 cargo run
 '''
+
+[tasks."api:docs"]
+description = "Serve the OpenAPI spec as Scalar API docs on http://localhost:3001"
+dir = "server"
+run = "bunx @scalar/cli@2 document serve openapi.json --watch --port 3001"
+
+[tasks.server]
+description = "Run the SQLite API and its Scalar API docs"
+run = "mise run api:serve ::: api:docs"
 
 [tasks."mobile:ios"]
 description = "Run the iOS app"

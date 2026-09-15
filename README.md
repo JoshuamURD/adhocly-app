@@ -10,8 +10,10 @@ Type a task and add optional metadata anywhere in the title:
 - `@tomorrow` or `@in 2 days` — planned date
 - `!friday` or `!next monday` — deadline
 - `@every friday` — weekly repeat
+- `@tomorrow 3pm` or `!friday 14:30` — a time on that date
+- `@9am` — a bare time means the next 9am to come (tomorrow if today's has passed)
 
-Dates accept `today`, `tomorrow`, `nextweek`, weekdays, `next <weekday>`, `in <number> days/weeks/months/years`, or `YYYY-MM-DD`. Completing a repeating task creates its next occurrence. Tasks without a project go to **Inbox**, and naming a project that does not exist yet creates it.
+Anything after `@` or `!` is read as a date by [chrono](https://github.com/wanasit/chrono), so `today`, `tomorrow`, `nextweek`, weekdays, `next monday`, `in 2 weeks`, `jul 4`, `friday at 5pm`, and `YYYY-MM-DD` all work. Times are `3pm` or `14:30` and default to 9am when omitted. Completing a repeating task creates its next occurrence. Tasks without a project go to **Inbox**, and naming a project that does not exist yet creates it.
 
 ```text
 Send revised brief #Client_Work @in 2 days !next monday

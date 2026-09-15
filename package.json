@@ -19,7 +19,8 @@
   "dependencies": {
     "@tanstack/svelte-query": "^6.1.48",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "chrono-node": "^2.10.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",

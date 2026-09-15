@@ -1,3 +1,6 @@
+// ponytail: English-only. Import a locale module (or drop /en for every bundled locale) when the app is translated.
+import { casual } from "chrono-node/en";
+
 export type ParsedTaskInput = {
   title: string;
   project: string | null;
@@ -6,100 +9,65 @@ export type ParsedTaskInput = {
   repeatWeekday: number | null;
 };
 
-const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-const dateToken = /(^|\s)([@!])(\d{4}-\d{2}-\d{2}|today|tomorrow|nextweek|sunday|monday|tuesday|wednesday|thursday|friday|saturday|next\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)|in\s+(?:\d+|one|two)\s+(?:days?|weeks?|months?|years?)|every\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday))(?=\s|$)/gi;
+const DEFAULT_TIME = "09:00";
+const markerToken = /(^|\s)([@!])/g;
+const projectToken = /(^|\s)#([\w-]+)(?=\s|$)/g;
+const everyPrefix = /^every\s+/i;
 
-function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+/** `YYYY-MM-DDTHH:MM` local wall clock; a date without a stated time takes the 09:00 default. */
+function wallClock(date: Date, hasTime: boolean): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return hasTime ? `${day}T${pad(date.getHours())}:${pad(date.getMinutes())}` : `${day}T${DEFAULT_TIME}`;
 }
 
-function addMonths(date: Date, months: number): void {
-  const day = date.getDate();
-  date.setDate(1);
-  date.setMonth(date.getMonth() + months);
-  date.setDate(Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()));
-}
-
-function parseDate(value: string, now: Date): string | null {
-  const token = value.toLowerCase();
-  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(token)) {
-    const [year, month, day] = token.split("-").map(Number);
-    const candidate = new Date(year, month - 1, day);
-    return candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day
-      ? token
-      : null;
-  }
-
-  const relative = /^in (\d+|one|two) (days?|weeks?|months?|years?)$/.exec(token);
-  if (relative) {
-    const amount = { one: 1, two: 2 }[relative[1] as "one" | "two"] ?? Number(relative[1]);
-    if (!Number.isSafeInteger(amount) || amount < 1) return null;
-
-    if (relative[2].startsWith("day")) date.setDate(date.getDate() + amount);
-    else if (relative[2].startsWith("week")) date.setDate(date.getDate() + amount * 7);
-    else addMonths(date, amount * (relative[2].startsWith("year") ? 12 : 1));
-    return formatDate(date);
-  }
-
-  const nextWeekday = /^next (.+)$/.exec(token)?.[1];
-  if (nextWeekday) {
-    const weekday = weekdays.indexOf(nextWeekday);
-    if (weekday < 0) return null;
-    date.setDate(date.getDate() + 7 - date.getDay() + weekday);
-    return formatDate(date);
-  }
-
-  if (token === "tomorrow") date.setDate(date.getDate() + 1);
-  else if (token === "nextweek") date.setDate(date.getDate() + 7);
-  else if (token !== "today") {
-    const weekday = weekdays.indexOf(token);
-    if (weekday < 0) return null;
-    date.setDate(date.getDate() + ((weekday - date.getDay() + 6) % 7) + 1);
-  }
-
-  return formatDate(date);
-}
-
-export function nextWeeklyDate(value: string | null): string | null {
-  if (!value) return null;
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
-  date.setDate(date.getDate() + 7);
-  return formatDate(date);
+/** How chrono reads the start of `text`, and how much of it that reading covers. */
+function parseWhen(text: string, now: Date) {
+  const result = casual.parse(text, now, { forwardDate: true }).find((parsed) => parsed.index === 0);
+  if (!result) return null;
+  const date = result.start.date();
+  return { date, value: wallClock(date, result.start.isCertain("hour")), length: result.text.length };
 }
 
 /**
  * Parses prefixed dates, repeats, and #project tokens from a task title.
+ * Dates carry a local wall clock time, defaulting to 09:00. A bare time means the next one to come,
+ * so `@9am` at 10am reads as tomorrow morning.
  */
 export function parseTaskInput(input: string, now: Date = new Date()): ParsedTaskInput {
   let plannedFor: string | null = null;
   let dueOn: string | null = null;
   let project: string | null = null;
   let repeatWeekday: number | null = null;
+  /** Character ranges consumed by recognised tokens, removed from the title at the end. */
+  const consumed: [number, number][] = [];
 
-  const title = input
-    .replace(dateToken, (match, space, marker, token) => {
-      const normalized = token.toLowerCase();
-      const repeatedDay = /^every (.+)$/.exec(normalized)?.[1];
-      const date = parseDate(repeatedDay ?? normalized, now);
-      if (!date) return match;
-      if (repeatedDay) repeatWeekday = weekdays.indexOf(repeatedDay);
-      if (marker === "@") plannedFor = date;
-      else dueOn = date;
-      return space;
-    })
-    .replace(/(^|\s)#([\w-]+)(?=\s|$)/g, (_match, space, name) => {
-      project = name.replaceAll("_", " ");
-      return space;
-    })
-    .replace(/\s+/g, " ")
-    .trim();
+  for (const match of input.matchAll(markerToken)) {
+    const marker = match.index! + match[1].length;
+    const body = input.slice(marker + 1);
+    const every = everyPrefix.exec(body)?.[0] ?? "";
+    const when = parseWhen(body.slice(every.length), now);
+    if (!when) continue;
 
-  return { title, project, plannedFor, dueOn, repeatWeekday };
+    consumed.push([marker, marker + 1 + every.length + when.length]);
+    if (every) repeatWeekday = when.date.getDay();
+    if (match[2] === "@") plannedFor = when.value;
+    else dueOn = when.value;
+  }
+
+  for (const match of input.matchAll(projectToken)) {
+    project = match[2].replaceAll("_", " ");
+    consumed.push([match.index! + match[1].length, match.index! + match[0].length]);
+  }
+
+  let title = "";
+  let cursor = 0;
+  for (const [start, end] of consumed.sort((a, b) => a[0] - b[0])) {
+    if (start < cursor) continue;
+    title += input.slice(cursor, start);
+    cursor = end;
+  }
+  title += input.slice(cursor);
+
+  return { title: title.replace(/\s+/g, " ").trim(), project, plannedFor, dueOn, repeatWeekday };
 }

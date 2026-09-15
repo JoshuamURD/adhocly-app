@@ -5,11 +5,11 @@ use crate::error::AppError;
 
 use super::model::{Task, TaskInput, ToggleResult};
 
-const SELECT_ONE: &str =
-    "SELECT t.*, p.name AS project FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?";
-const SELECT_ALL: &str = "SELECT t.*, p.name AS project FROM tasks t JOIN projects p ON p.id = t.project_id ORDER BY t.created_at DESC, t.id DESC";
-
 /// Persistence for tasks. Inputs are expected to be validated by the caller.
+///
+/// Long queries live in `sql/tasks/` (`query_file!`); one-liners use the inline `query!` macros.
+/// Both are checked against the migrated schema at compile time, so `DATABASE_URL` must point at
+/// a migrated database when compiling — see the `db:schema` task in `mise.toml`.
 #[async_trait]
 pub(crate) trait TaskRepository: Send + Sync {
     /// Newest first.
@@ -35,8 +35,7 @@ impl SqliteTaskRepository {
     where
         E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
     {
-        sqlx::query_as::<_, Task>(SELECT_ONE)
-            .bind(id)
+        sqlx::query_file_as!(Task, "sql/tasks/select_one.sql", id)
             .fetch_optional(executor)
             .await?
             .ok_or(AppError::NotFound("task"))
@@ -46,7 +45,7 @@ impl SqliteTaskRepository {
 #[async_trait]
 impl TaskRepository for SqliteTaskRepository {
     async fn list(&self) -> Result<Vec<Task>, AppError> {
-        Ok(sqlx::query_as::<_, Task>(SELECT_ALL)
+        Ok(sqlx::query_file_as!(Task, "sql/tasks/select_all.sql")
             .fetch_all(&self.db)
             .await?)
     }
@@ -56,18 +55,16 @@ impl TaskRepository for SqliteTaskRepository {
     }
 
     async fn create(&self, input: &TaskInput) -> Result<Task, AppError> {
-        sqlx::query(
-            "INSERT INTO tasks (
-                id, title, project_id, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-             ) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)",
+        sqlx::query_file!(
+            "sql/tasks/insert.sql",
+            &input.id,
+            input.title.trim(),
+            input.project_id.trim(),
+            &input.planned_for,
+            &input.due_on,
+            input.repeat_weekday,
+            input.completed
         )
-        .bind(&input.id)
-        .bind(input.title.trim())
-        .bind(input.project_id.trim())
-        .bind(&input.planned_for)
-        .bind(&input.due_on)
-        .bind(input.repeat_weekday)
-        .bind(input.completed)
         .execute(&self.db)
         .await?;
 
@@ -75,19 +72,16 @@ impl TaskRepository for SqliteTaskRepository {
     }
 
     async fn update(&self, id: &str, input: &TaskInput) -> Result<Task, AppError> {
-        let result = sqlx::query(
-            "UPDATE tasks SET
-                title = ?, project_id = ?, planned_for = ?, due_on = ?, repeat_weekday = ?,
-                completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?",
+        let result = sqlx::query_file!(
+            "sql/tasks/update.sql",
+            input.title.trim(),
+            input.project_id.trim(),
+            &input.planned_for,
+            &input.due_on,
+            input.repeat_weekday,
+            input.completed,
+            id
         )
-        .bind(input.title.trim())
-        .bind(input.project_id.trim())
-        .bind(&input.planned_for)
-        .bind(&input.due_on)
-        .bind(input.repeat_weekday)
-        .bind(input.completed)
-        .bind(id)
         .execute(&self.db)
         .await?;
 
@@ -101,31 +95,20 @@ impl TaskRepository for SqliteTaskRepository {
         let mut transaction = self.db.begin().await?;
         let current = Self::fetch(&mut *transaction, id).await?;
 
-        sqlx::query(
+        sqlx::query!(
             "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            completed,
+            id
         )
-        .bind(completed)
-        .bind(id)
         .execute(&mut *transaction)
         .await?;
         let task = Self::fetch(&mut *transaction, id).await?;
 
         let next_task = if !current.completed && completed && current.repeat_weekday.is_some() {
             let next_id = uuid::Uuid::now_v7().to_string();
-            sqlx::query(
-                "INSERT INTO tasks (
-                    id, title, project_id, planned_for, due_on, repeat_weekday, created_at, updated_at, completed
-                 ) SELECT ?, title, project_id,
-                    CASE WHEN planned_for IS NULL THEN NULL ELSE strftime('%Y-%m-%dT%H:%M', planned_for, '+7 days') END,
-                    CASE WHEN due_on IS NULL THEN NULL ELSE strftime('%Y-%m-%dT%H:%M', due_on, '+7 days') END,
-                    repeat_weekday, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 0
-                 FROM tasks WHERE id = ?",
-            )
-            .bind(&next_id)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await?;
+            sqlx::query_file!("sql/tasks/insert_next_occurrence.sql", &next_id, id)
+                .execute(&mut *transaction)
+                .await?;
             Some(Self::fetch(&mut *transaction, &next_id).await?)
         } else {
             None
@@ -136,8 +119,7 @@ impl TaskRepository for SqliteTaskRepository {
     }
 
     async fn delete(&self, id: &str) -> Result<(), AppError> {
-        let result = sqlx::query("DELETE FROM tasks WHERE id = ?")
-            .bind(id)
+        let result = sqlx::query!("DELETE FROM tasks WHERE id = ?", id)
             .execute(&self.db)
             .await?;
         if result.rows_affected() == 0 {

@@ -38,10 +38,11 @@ impl SqliteReminderRepository {
 #[async_trait]
 impl ReminderRepository for SqliteReminderRepository {
     async fn get(&self, id: &str) -> Result<Reminder, AppError> {
-        sqlx::query_as::<_, ReminderRow>(
+        sqlx::query_as!(
+            ReminderRow,
             "SELECT remind_at, task_id FROM task_reminders WHERE id = ?",
+            id
         )
-        .bind(id)
         .fetch_optional(&self.db)
         .await?
         .map(Reminder::from)

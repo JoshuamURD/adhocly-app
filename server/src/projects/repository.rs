@@ -98,32 +98,39 @@ impl SqliteProjectRepository {
     where
         E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
     {
-        sqlx::query_as::<_, ProjectRow>("SELECT * FROM projects WHERE id = ?")
-            .bind(id)
-            .fetch_optional(executor)
-            .await?
-            .map(Project::from)
-            .ok_or(AppError::NotFound("project"))
+        sqlx::query_as!(
+            ProjectRow,
+            "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
+            id
+        )
+        .fetch_optional(executor)
+        .await?
+        .map(Project::from)
+        .ok_or(AppError::NotFound("project"))
     }
 
     async fn field_or_404<'e, E>(executor: E, id: &str) -> Result<MetadataField, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
     {
-        let row = sqlx::query_as::<_, FieldRow>("SELECT * FROM metadata_fields WHERE id = ?")
-            .bind(id)
-            .fetch_optional(executor)
-            .await?
-            .ok_or(AppError::NotFound("field"))?;
+        let row = sqlx::query_as!(
+            FieldRow,
+            "SELECT id, name, kind, options, created_at FROM metadata_fields WHERE id = ?",
+            id
+        )
+        .fetch_optional(executor)
+        .await?
+        .ok_or(AppError::NotFound("field"))?;
         Ok(row.into())
     }
 
     async fn load_project(&self, id: &str) -> Result<Project, AppError> {
         let mut project = Self::project_or_404(&self.db, id).await?;
-        project.metadata = sqlx::query_as::<_, MetadataValue>(
+        project.metadata = sqlx::query_as!(
+            MetadataValue,
             "SELECT field_id, value FROM project_metadata WHERE project_id = ? ORDER BY field_id",
+            id
         )
-        .bind(id)
         .fetch_all(&self.db)
         .await?;
         Ok(project)
@@ -133,16 +140,19 @@ impl SqliteProjectRepository {
 #[async_trait]
 impl ProjectRepository for SqliteProjectRepository {
     async fn list(&self) -> Result<Vec<Project>, AppError> {
-        let mut projects: Vec<Project> =
-            sqlx::query_as::<_, ProjectRow>("SELECT * FROM projects ORDER BY name COLLATE NOCASE")
-                .fetch_all(&self.db)
-                .await?
-                .into_iter()
-                .map(Project::from)
-                .collect();
+        let mut projects: Vec<Project> = sqlx::query_as!(
+            ProjectRow,
+            "SELECT id, name, created_at, updated_at FROM projects ORDER BY name COLLATE NOCASE"
+        )
+        .fetch_all(&self.db)
+        .await?
+        .into_iter()
+        .map(Project::from)
+        .collect();
 
-        let values = sqlx::query_as::<_, ProjectValue>(
-            "SELECT project_id, field_id, value FROM project_metadata ORDER BY project_id, field_id",
+        let values = sqlx::query_as!(
+            ProjectValue,
+            "SELECT project_id, field_id, value FROM project_metadata ORDER BY project_id, field_id"
         )
         .fetch_all(&self.db)
         .await?;
@@ -169,24 +179,23 @@ impl ProjectRepository for SqliteProjectRepository {
     }
 
     async fn create(&self, name: &str) -> Result<Project, AppError> {
-        let saved = sqlx::query_as::<_, ProjectRow>(
-            "INSERT INTO projects (id, name, created_at, updated_at)
-             VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-             RETURNING *",
+        let saved = sqlx::query_file_as!(
+            ProjectRow,
+            "sql/projects/insert_returning.sql",
+            uuid::Uuid::now_v7().to_string(),
+            name
         )
-        .bind(uuid::Uuid::now_v7().to_string())
-        .bind(name)
         .fetch_one(&self.db)
         .await?;
         Ok(saved.into())
     }
 
     async fn update(&self, id: &str, name: &str) -> Result<Project, AppError> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             "UPDATE projects SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            name,
+            id
         )
-        .bind(name)
-        .bind(id)
         .execute(&self.db)
         .await?;
         if result.rows_affected() == 0 {
@@ -197,13 +206,14 @@ impl ProjectRepository for SqliteProjectRepository {
 
     async fn delete(&self, id: &str) -> Result<(), AppError> {
         let mut transaction = self.db.begin().await?;
-        sqlx::query("UPDATE tasks SET project_id = ? WHERE project_id = ?")
-            .bind(super::model::INBOX_ID)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await?;
-        let deleted = sqlx::query("DELETE FROM projects WHERE id = ?")
-            .bind(id)
+        sqlx::query!(
+            "UPDATE tasks SET project_id = ? WHERE project_id = ?",
+            super::model::INBOX_ID,
+            id
+        )
+        .execute(&mut *transaction)
+        .await?;
+        let deleted = sqlx::query!("DELETE FROM projects WHERE id = ?", id)
             .execute(&mut *transaction)
             .await?;
         if deleted.rows_affected() == 0 {
@@ -214,24 +224,25 @@ impl ProjectRepository for SqliteProjectRepository {
     }
 
     async fn list_fields(&self) -> Result<Vec<MetadataField>, AppError> {
-        let rows =
-            sqlx::query_as::<_, FieldRow>("SELECT * FROM metadata_fields ORDER BY created_at, id")
-                .fetch_all(&self.db)
-                .await?;
+        let rows = sqlx::query_as!(
+            FieldRow,
+            "SELECT id, name, kind, options, created_at FROM metadata_fields ORDER BY created_at, id"
+        )
+        .fetch_all(&self.db)
+        .await?;
         Ok(rows.into_iter().map(MetadataField::from).collect())
     }
 
     async fn create_field(&self, input: &MetadataFieldInput) -> Result<MetadataField, AppError> {
         let options = normalize_options(input.kind, input.options.clone())?;
-        let row = sqlx::query_as::<_, FieldRow>(
-            "INSERT INTO metadata_fields (id, name, kind, options, created_at)
-             VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-             RETURNING *",
+        let row = sqlx::query_file_as!(
+            FieldRow,
+            "sql/projects/insert_field_returning.sql",
+            uuid::Uuid::now_v7().to_string(),
+            input.name.trim(),
+            input.kind.as_str(),
+            encode_options(&options)
         )
-        .bind(uuid::Uuid::now_v7().to_string())
-        .bind(input.name.trim())
-        .bind(input.kind.as_str())
-        .bind(encode_options(&options))
         .fetch_one(&self.db)
         .await?;
         Ok(row.into())
@@ -244,20 +255,20 @@ impl ProjectRepository for SqliteProjectRepository {
     ) -> Result<MetadataField, AppError> {
         let existing = Self::field_or_404(&self.db, id).await?;
         let options = normalize_options(existing.kind, input.options.clone())?;
-        let row = sqlx::query_as::<_, FieldRow>(
-            "UPDATE metadata_fields SET name = ?, options = ? WHERE id = ? RETURNING *",
+        let row = sqlx::query_file_as!(
+            FieldRow,
+            "sql/projects/update_field_returning.sql",
+            input.name.trim(),
+            encode_options(&options),
+            id
         )
-        .bind(input.name.trim())
-        .bind(encode_options(&options))
-        .bind(id)
         .fetch_one(&self.db)
         .await?;
         Ok(row.into())
     }
 
     async fn delete_field(&self, id: &str) -> Result<(), AppError> {
-        let result = sqlx::query("DELETE FROM metadata_fields WHERE id = ?")
-            .bind(id)
+        let result = sqlx::query!("DELETE FROM metadata_fields WHERE id = ?", id)
             .execute(&self.db)
             .await?;
         if result.rows_affected() == 0 {
@@ -277,21 +288,22 @@ impl ProjectRepository for SqliteProjectRepository {
 
         match value {
             None => {
-                sqlx::query("DELETE FROM project_metadata WHERE project_id = ? AND field_id = ?")
-                    .bind(project_id)
-                    .bind(field_id)
-                    .execute(&self.db)
-                    .await?;
+                sqlx::query!(
+                    "DELETE FROM project_metadata WHERE project_id = ? AND field_id = ?",
+                    project_id,
+                    field_id
+                )
+                .execute(&self.db)
+                .await?;
             }
             Some(value) => {
                 validate_value(field.kind, &field.options, &value)?;
-                sqlx::query(
-                    "INSERT INTO project_metadata (project_id, field_id, value) VALUES (?, ?, ?)
-                     ON CONFLICT (project_id, field_id) DO UPDATE SET value = excluded.value",
+                sqlx::query_file!(
+                    "sql/projects/upsert_metadata.sql",
+                    project_id,
+                    field_id,
+                    value
                 )
-                .bind(project_id)
-                .bind(field_id)
-                .bind(value)
                 .execute(&self.db)
                 .await?;
             }

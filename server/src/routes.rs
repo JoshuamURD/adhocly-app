@@ -122,6 +122,8 @@ async fn openapi() -> Json<utoipa::openapi::OpenApi> {
 async fn health(
     axum::extract::State(state): axum::extract::State<AppState>,
 ) -> std::result::Result<StatusCode, AppError> {
+    // Not a tagged macro on purpose: this touches no schema, and `SELECT 1` has no nameable
+    // output column for `query!` to bind to.
     sqlx::query("SELECT 1").execute(state.pool()).await?;
     Ok(StatusCode::OK)
 }

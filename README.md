@@ -71,6 +71,43 @@ bun run api:gen
 the first run downloads the Scalar CLI. The spec's `servers` entry is what the docs' **Test Request** sends
 to, so requests from the docs only reach an API running at `http://localhost:3000`.
 
+## iOS offline sync
+
+The iOS app stores a server snapshot and an ordered outbox together in one SQLite record. A local
+mutation commits that record in a single statement; reads rebuild the snapshot with pending changes
+applied. Server pulls cannot overwrite unsynced work. Local queries and mutations run even when
+TanStack considers the device offline.
+
+`GET /api/sync` returns a transactionally consistent snapshot with entity revisions. `POST /api/sync`
+accepts a mutation ID, URL, method, body, and expected revision. The server checks the revision and
+commits the business write and its retry receipt in the **same transaction**. Replaying an identical
+mutation returns its receipt without rewriting the entity; reusing an ID for another request or
+writing against an old revision returns 409. SQLite triggers track revisions for direct browser/
+desktop writes and cascades too. Direct browser/desktop API calls otherwise keep their existing behavior.
+
+After acknowledgement, the client atomically removes the operation and updates its baseline, rebasing
+later operations only onto that operation's own effects. Each repeating task has one canonical
+`next:{taskId}` successor across devices. Repeated completions do not overwrite that successor, and
+server tombstones prevent recreating a deleted successor.
+
+Sync runs at launch, native resume, foreground/reconnect, after writes, and on demand. Requests time
+out after 20 seconds; transient failures retry while foregrounded with backoff from 2 to 60 seconds.
+Permanent conflicts retain the queued data and still allow remote snapshots to refresh. The sync
+control shows the queued change and last fetched server version; users can retry, rename, explicitly
+keep their change against the reviewed revision, or discard it. Discarding a create warns about and
+removes dependent queued changes rather than leaving dangling references.
+
+**Upgrade the server before the iOS app.** Existing unversioned outbox entries are imported but require
+explicit review; they are never blindly replayed. The previous cache/outbox remain untouched as a
+recovery backup in `adhocly-offline.db`. Do not clear app storage to resolve a sync error. A saved
+outbox is bound to its API origin and will not be sent to a different server.
+
+Full snapshots, whole-document local commits, and retained receipts/tombstones are deliberate choices
+for a personal app. Do not prune receipts or tombstones without a device-acknowledgement protocol;
+add incremental replication only when the dataset warrants it. Sync does not require or promise
+execution while iOS has suspended the app.
+
+
 Individual commands:
 
 ```sh

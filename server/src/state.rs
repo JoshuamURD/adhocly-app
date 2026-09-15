@@ -21,16 +21,20 @@ pub(crate) struct AppState {
 
 impl AppState {
     pub(crate) fn new(pool: SqlitePool) -> Self {
+        Self::with_sync(pool, None)
+    }
+
+    pub(crate) fn with_sync(pool: SqlitePool, sync: Option<crate::sync::SyncOperation>) -> Self {
         Self {
-            tasks: Arc::new(SqliteTaskRepository::new(pool.clone())),
-            projects: Arc::new(SqliteProjectRepository::new(pool.clone())),
-            folders: Arc::new(SqliteFolderRepository::new(pool.clone())),
+            tasks: Arc::new(SqliteTaskRepository::new(pool.clone(), sync.clone())),
+            projects: Arc::new(SqliteProjectRepository::new(pool.clone(), sync.clone())),
+            folders: Arc::new(SqliteFolderRepository::new(pool.clone(), sync)),
             reminders: Arc::new(SqliteReminderRepository::new(pool.clone())),
             pool,
         }
     }
 
-    /// Only the health check uses this; everything else goes through a repository.
+    /// Health and sync use the pool for consistent snapshots and durable receipts.
     pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
     }

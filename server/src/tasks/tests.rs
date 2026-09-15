@@ -72,7 +72,9 @@ async fn crud_round_trip() {
         repeat_weekday: Some(3),
         completed: false,
     };
-    let (_, Json(created)) = create_task(State(state.clone()), Json(input)).await.unwrap();
+    let (_, Json(created)) = create_task(State(state.clone()), Json(input))
+        .await
+        .unwrap();
     assert_task(
         &created,
         "task-1",
@@ -88,7 +90,10 @@ async fn crud_round_trip() {
     let Json(result) = toggle_task(
         Path(created.id.clone()),
         State(state.clone()),
-        Json(ToggleInput { completed: true }),
+        Json(ToggleInput {
+            completed: true,
+            next_id: Some("next:task-1".into()),
+        }),
     )
     .await
     .unwrap();
@@ -104,6 +109,7 @@ async fn crud_round_trip() {
         true,
     );
     let next = result.next_task.unwrap();
+    assert_eq!(next.id, "next:task-1");
     assert_task(
         &next,
         &next.id,

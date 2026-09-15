@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, ToSchema, FromRow)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Task {
     pub(crate) id: String,
@@ -35,11 +35,14 @@ pub(crate) struct TaskInput {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ToggleInput {
     pub(crate) completed: bool,
+    /// If supplied, must equal `next:{taskId}`; all clients share one successor.
+    pub(crate) next_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ToggleResult {
     pub(crate) task: Task,

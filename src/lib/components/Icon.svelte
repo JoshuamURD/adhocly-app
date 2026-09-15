@@ -1,5 +1,5 @@
 <script module lang="ts">
-  export type IconName = "menu" | "sun" | "list" | "plus" | "close" | "arrow" | "chevron" | "pencil";
+  export type IconName = "menu" | "sun" | "list" | "plus" | "close" | "arrow" | "chevron" | "pencil" | "sync";
 </script>
 
 <script lang="ts">
@@ -21,6 +21,8 @@
     <path d="m9 5 7 7-7 7" />
   {:else if name === "pencil"}
     <path d="M4 20h4L18.5 9.5a2.83 2.83 0 0 0-4-4L4 16z" />
+  {:else if name === "sync"}
+    <path d="M20 7v5h-5M4 17v-5h5M18.5 9A7 7 0 0 0 6.2 6.2L4 9m16 6-2.2 2.8A7 7 0 0 1 5.5 15" />
   {:else}
     <path d="M12 19V5m-6 6 6-6 6 6" />
   {/if}

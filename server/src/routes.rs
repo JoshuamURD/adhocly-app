@@ -12,6 +12,7 @@ use crate::{
     },
     reminders::{self, Reminder},
     state::AppState,
+    sync::{self, SyncOperation, SyncReply, SyncSnapshot},
     tasks::{self, Task, TaskInput, ToggleInput, ToggleResult},
 };
 
@@ -22,6 +23,8 @@ use crate::{
     servers((url = "http://localhost:3000", description = "Local adhocly API")),
     paths(
         health,
+        sync::get_snapshot,
+        sync::apply,
         tasks::list_tasks,
         tasks::get_task,
         tasks::create_task,
@@ -46,6 +49,9 @@ use crate::{
         reminders::get_reminder
     ),
     components(schemas(
+        SyncOperation,
+        SyncSnapshot,
+        SyncReply,
         Task,
         TaskInput,
         ToggleInput,
@@ -75,6 +81,7 @@ pub(crate) struct ApiDoc;
 pub(crate) fn app(db: SqlitePool) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/api/sync", get(sync::get_snapshot).post(sync::apply))
         .route("/openapi.json", get(openapi))
         .route(
             "/api/tasks",

@@ -5,6 +5,7 @@ mod projects;
 mod reminders;
 mod routes;
 mod state;
+mod sync;
 mod tasks;
 
 use anyhow::{Context, Result};

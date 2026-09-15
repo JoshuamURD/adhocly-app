@@ -24,7 +24,9 @@ import type {
   QueryKey
 } from '@tanstack/svelte-query';
 
-import { apiFetch } from '../api-fetch';
+import { apiFetch } from '../api-fetch.ts';
+export interface BTreeMap {[key: string]: number}
+
 export type FieldKind = typeof FieldKind[keyof typeof FieldKind];
 
 
@@ -47,6 +49,11 @@ export interface Folder {
 }
 
 export interface FolderInput {
+  /**
+     * Optional client-selected entity id; sync uses a separate mutation id for safe replay.
+     * @nullable
+     */
+  id?: string | null;
   name: string;
   /**
      * Omitted or null creates/moves the folder at the top level.
@@ -64,6 +71,11 @@ export interface MetadataField {
 }
 
 export interface MetadataFieldInput {
+  /**
+     * Optional client-selected entity id; sync uses a separate mutation id for safe replay.
+     * @nullable
+     */
+  id?: string | null;
   kind: FieldKind;
   name: string;
   options?: string[];
@@ -110,12 +122,25 @@ export interface ProjectFolderInput {
 }
 
 export interface ProjectInput {
+  /**
+     * Optional client-selected entity id; sync uses a separate mutation id for safe replay.
+     * @nullable
+     */
+  id?: string | null;
   name: string;
 }
 
 export interface Reminder {
   remindAt: string;
   taskId: string;
+}
+
+export interface SyncOperation {
+  body: unknown;
+  expectedVersion: number;
+  id: string;
+  method: string;
+  url: string;
 }
 
 export interface Task {
@@ -141,6 +166,20 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface SyncSnapshot {
+  fields: MetadataField[];
+  folders: Folder[];
+  projects: Project[];
+  tasks: Task[];
+  versions: BTreeMap;
+}
+
+export interface SyncReply {
+  /** Only versions changed by this operation, not unrelated changes from another device. */
+  changes: BTreeMap;
+  snapshot: SyncSnapshot;
+}
+
 export interface TaskInput {
   completed: boolean;
   /**
@@ -162,6 +201,11 @@ export interface TaskInput {
 
 export interface ToggleInput {
   completed: boolean;
+  /**
+     * If supplied, must equal `next:{taskId}`; all clients share one successor.
+     * @nullable
+     */
+  nextId?: string | null;
 }
 
 export interface ToggleResult {
@@ -1834,6 +1878,211 @@ export const invalidateGetReminder = async (
 
 
 
+export type getSyncSnapshotResponse200 = {
+  data: SyncSnapshot
+  status: 200
+}
+
+export type getSyncSnapshotResponseSuccess = (getSyncSnapshotResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSyncSnapshotResponse = (getSyncSnapshotResponseSuccess)
+
+export const getGetSyncSnapshotUrl = () => {
+
+
+
+
+  return `/api/sync`
+}
+
+export const getSyncSnapshot = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getSyncSnapshotResponse> => {
+
+  return apiFetch<getSyncSnapshotResponse>(getGetSyncSnapshotUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSyncSnapshotQueryKey = () => {
+    return [
+    `/api/sync`
+    ] as const;
+    }
+
+
+export const getGetSyncSnapshotQueryOptions = <TData = Awaited<ReturnType<typeof getSyncSnapshot>>, TError = unknown>( options?: { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof getSyncSnapshot>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSyncSnapshotQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSyncSnapshot>>> = ({ signal }) => getSyncSnapshot({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as CreateQueryOptions<Awaited<ReturnType<typeof getSyncSnapshot>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSyncSnapshotQueryResult = NonNullable<Awaited<ReturnType<typeof getSyncSnapshot>>>
+export type GetSyncSnapshotQueryError = unknown
+
+
+
+export function createGetSyncSnapshot<TData = Awaited<ReturnType<typeof getSyncSnapshot>>, TError = unknown>(
+  options?: () => { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof getSyncSnapshot>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient
+ ): CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+
+
+  const query = createQuery(() => getGetSyncSnapshotQueryOptions(options?.()), queryClient) as CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return query
+}
+
+
+/**
+ * @summary Invalidates the {@link createGetSyncSnapshot} query
+ */
+export const invalidateGetSyncSnapshot = async (
+ queryClient: QueryClient,  options?: InvalidateOptions
+  ): Promise<QueryClient> => {
+
+  await queryClient.invalidateQueries({ queryKey: getGetSyncSnapshotQueryKey() }, options);
+
+  return queryClient;
+}
+
+
+
+
+
+export type applySyncOperationResponse200 = {
+  data: SyncReply
+  status: 200
+}
+
+export type applySyncOperationResponse400 = {
+  data: string
+  status: 400
+}
+
+export type applySyncOperationResponse404 = {
+  data: string
+  status: 404
+}
+
+export type applySyncOperationResponse409 = {
+  data: string
+  status: 409
+}
+
+export type applySyncOperationResponseSuccess = (applySyncOperationResponse200) & {
+  headers: Headers;
+};
+export type applySyncOperationResponseError = (applySyncOperationResponse400 | applySyncOperationResponse404 | applySyncOperationResponse409) & {
+  headers: Headers;
+};
+
+export type applySyncOperationResponse = (applySyncOperationResponseSuccess | applySyncOperationResponseError)
+
+export const getApplySyncOperationUrl = () => {
+
+
+
+
+  return `/api/sync`
+}
+
+export const applySyncOperation = async (syncOperation: SyncOperation, options?: Parameters<typeof apiFetch>[1]): Promise<applySyncOperationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<applySyncOperationResponse>(getApplySyncOperationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(syncOperation)
+  }
+);}
+
+
+
+
+
+export const getApplySyncOperationMutationKey = () => ['applySyncOperation'] as const;
+
+export const getApplySyncOperationMutationOptions = <TError = string,
+    TContext = unknown>(options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof applySyncOperation>>, TError,ApplySyncOperationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof applySyncOperation>>, TError,ApplySyncOperationMutationVariables, TContext> => {
+
+const mutationKey = getApplySyncOperationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applySyncOperation>>, ApplySyncOperationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  applySyncOperation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplySyncOperationMutationResult = NonNullable<Awaited<ReturnType<typeof applySyncOperation>>>
+    export type ApplySyncOperationMutationBody = SyncOperation
+    export type ApplySyncOperationMutationError = string
+    export type ApplySyncOperationMutationVariables = {data: SyncOperation}
+
+    export const createApplySyncOperation = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof applySyncOperation>>, TError,ApplySyncOperationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof applySyncOperation>>,
+        TError,
+        ApplySyncOperationMutationVariables,
+        TContext
+      > => {
+      return createMutation(() => ({ ...getApplySyncOperationMutationOptions(options?.()) }), queryClient);
+    }
+
 export type listTasksResponse200 = {
   data: Task[]
   status: 200
@@ -2347,6 +2596,11 @@ export type toggleTaskResponse200 = {
   status: 200
 }
 
+export type toggleTaskResponse400 = {
+  data: string
+  status: 400
+}
+
 export type toggleTaskResponse404 = {
   data: string
   status: 404
@@ -2355,7 +2609,7 @@ export type toggleTaskResponse404 = {
 export type toggleTaskResponseSuccess = (toggleTaskResponse200) & {
   headers: Headers;
 };
-export type toggleTaskResponseError = (toggleTaskResponse404) & {
+export type toggleTaskResponseError = (toggleTaskResponse400 | toggleTaskResponse404) & {
   headers: Headers;
 };
 

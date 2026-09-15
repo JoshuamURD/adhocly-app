@@ -3,24 +3,28 @@
     createCreateMetadataField,
     createDeleteMetadataField,
     createDeleteProject,
+    createMoveProject,
     createSetProjectMetadata,
     createUpdateMetadataField,
     createUpdateProject,
     type FieldKind,
+    type Folder,
     type MetadataField,
     type Project,
   } from "$lib/api/generated";
   import FieldRow from "$lib/components/FieldRow.svelte";
   import OptionRows from "$lib/components/OptionRows.svelte";
+  import { folderPath } from "$lib/folders";
   import { choiceOptions, isValidValue, normalizeOptions, valueFor } from "$lib/metadata";
 
-  let { project, fields, onDeleted }: { project: Project; fields: MetadataField[]; onDeleted: () => void } =
+  let { project, fields, folders, onDeleted }: { project: Project; fields: MetadataField[]; folders: Folder[]; onDeleted: () => void } =
     $props();
 
   const kinds: FieldKind[] = ["text", "number", "choice"];
 
   const setValue = createSetProjectMetadata();
   const renameProject = createUpdateProject();
+  const fileProject = createMoveProject();
   const removeProject = createDeleteProject();
   const addFieldMutation = createCreateMetadataField();
   const renameField = createUpdateMetadataField();
@@ -34,6 +38,13 @@
   let newFieldOptions = $state<string[]>([""]);
 
   /** A choice field needs a name and at least one non-blank option; the API rejects the rest. */
+  /** Folders indented by path, so a nested folder is not just a repeated name. */
+  const folderOptions = $derived(
+    [...folders]
+      .map((folder) => ({ id: folder.id, path: folderPath(folders, folder.id) }))
+      .sort((a, b) => a.path.localeCompare(b.path)),
+  );
+
   const canAdd = $derived(
     !!newFieldName.trim() && (newFieldKind !== "choice" || normalizeOptions(newFieldOptions).length > 0),
   );
@@ -41,6 +52,7 @@
   const busy = $derived(
     setValue.isPending ||
       renameProject.isPending ||
+      fileProject.isPending ||
       removeProject.isPending ||
       addFieldMutation.isPending ||
       renameField.isPending ||
@@ -102,6 +114,16 @@
       return;
     }
     void run(() => renameProject.mutateAsync({ id: project.id, data: { name } }), `Renamed to ${name}.`);
+  }
+
+  /** The drag-free way to file a project, for keyboards and touch. */
+  function file(event: Event & { currentTarget: HTMLSelectElement }) {
+    const folderId = event.currentTarget.value || null;
+    if (folderId === (project.folderId ?? null)) return;
+    void run(
+      () => fileProject.mutateAsync({ id: project.id, data: { folderId } }),
+      folderId ? "Filed." : "Moved to the top level.",
+    );
   }
 
   function addField(event: SubmitEvent) {
@@ -196,6 +218,14 @@
     <label class="grid gap-[5px] text-[11px] text-muted">
       <span>Name</span>
       <input class={settingInput} value={project.name} disabled={busy} onblur={rename} />
+    </label>
+
+    <label class="mt-[10px] grid gap-[5px] text-[11px] text-muted">
+      <span>Folder</span>
+      <select class={settingInput} value={project.folderId ?? ""} disabled={busy} onchange={file}>
+        <option value="">— Top level</option>
+        {#each folderOptions as option (option.id)}<option value={option.id}>{option.path}</option>{/each}
+      </select>
     </label>
 
     <h3 class="mt-6 mb-[2px] text-[11px] font-bold tracking-[.12em] uppercase">Fields</h3>

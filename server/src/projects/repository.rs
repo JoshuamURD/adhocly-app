@@ -14,13 +14,14 @@ use super::model::{
 struct ProjectRow {
     id: String,
     name: String,
+    folder_id: Option<String>,
     created_at: String,
     updated_at: String,
 }
 
 impl From<ProjectRow> for Project {
     fn from(row: ProjectRow) -> Self {
-        Self::new(row.id, row.name, row.created_at, row.updated_at)
+        Self::new(row.id, row.name, row.folder_id, row.created_at, row.updated_at)
     }
 }
 
@@ -63,6 +64,8 @@ pub(crate) trait ProjectRepository: Send + Sync {
     async fn get(&self, id: &str) -> Result<Project, AppError>;
     async fn create(&self, name: &str) -> Result<Project, AppError>;
     async fn update(&self, id: &str, name: &str) -> Result<Project, AppError>;
+    /// Moves the project into a folder, or to the top level when `folder_id` is `None`.
+    async fn set_folder(&self, id: &str, folder_id: Option<&str>) -> Result<Project, AppError>;
     /// Moves the project's tasks to Inbox before deleting it.
     async fn delete(&self, id: &str) -> Result<(), AppError>;
 
@@ -100,7 +103,7 @@ impl SqliteProjectRepository {
     {
         sqlx::query_as!(
             ProjectRow,
-            "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
+            "SELECT id, name, folder_id, created_at, updated_at FROM projects WHERE id = ?",
             id
         )
         .fetch_optional(executor)
@@ -125,6 +128,8 @@ impl SqliteProjectRepository {
     }
 
     async fn load_project(&self, id: &str) -> Result<Project, AppError> {
+        // Reads back rather than trusting a write's `RETURNING` clause: SQLite reports a NULL
+        // column there as SQLITE_TEXT, so an unbound `folder_id` decodes as an empty string.
         let mut project = Self::project_or_404(&self.db, id).await?;
         project.metadata = sqlx::query_as!(
             MetadataValue,
@@ -142,7 +147,7 @@ impl ProjectRepository for SqliteProjectRepository {
     async fn list(&self) -> Result<Vec<Project>, AppError> {
         let mut projects: Vec<Project> = sqlx::query_as!(
             ProjectRow,
-            "SELECT id, name, created_at, updated_at FROM projects ORDER BY name COLLATE NOCASE"
+            "SELECT id, name, folder_id, created_at, updated_at FROM projects ORDER BY name COLLATE NOCASE"
         )
         .fetch_all(&self.db)
         .await?
@@ -179,15 +184,11 @@ impl ProjectRepository for SqliteProjectRepository {
     }
 
     async fn create(&self, name: &str) -> Result<Project, AppError> {
-        let saved = sqlx::query_file_as!(
-            ProjectRow,
-            "sql/projects/insert_returning.sql",
-            uuid::Uuid::now_v7().to_string(),
-            name
-        )
-        .fetch_one(&self.db)
-        .await?;
-        Ok(saved.into())
+        let id = uuid::Uuid::now_v7().to_string();
+        sqlx::query_file!("sql/projects/insert.sql", id, name)
+            .execute(&self.db)
+            .await?;
+        self.load_project(&id).await
     }
 
     async fn update(&self, id: &str, name: &str) -> Result<Project, AppError> {
@@ -201,6 +202,27 @@ impl ProjectRepository for SqliteProjectRepository {
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("project"));
         }
+        self.load_project(id).await
+    }
+
+    async fn set_folder(&self, id: &str, folder_id: Option<&str>) -> Result<Project, AppError> {
+        Self::project_or_404(&self.db, id).await?;
+        if let Some(folder_id) = folder_id {
+            let parent = sqlx::query_scalar!("SELECT id FROM folders WHERE id = ?", folder_id)
+                .fetch_optional(&self.db)
+                .await?;
+            if parent.is_none() {
+                return Err(AppError::NotFound("folder"));
+            }
+        }
+
+        sqlx::query!(
+            "UPDATE projects SET folder_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            folder_id,
+            id
+        )
+        .execute(&self.db)
+        .await?;
         self.load_project(id).await
     }
 

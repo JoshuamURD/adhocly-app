@@ -25,12 +25,18 @@ export default defineConfig({
                 "createProject",
                 "updateProject",
                 "deleteProject",
+                "moveProject",
                 "createMetadataField",
                 "updateMetadataField",
                 "deleteMetadataField",
                 "setProjectMetadata",
               ],
               invalidates: ["listProjects", "listTasks"],
+            },
+            {
+              // Deleting a folder hands its projects to the parent folder, so they move too.
+              onMutations: ["createFolder", "updateFolder", "deleteFolder"],
+              invalidates: ["listFolders", "listProjects"],
             },
           ],
         },

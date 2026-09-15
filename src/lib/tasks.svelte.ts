@@ -1,16 +1,23 @@
 import { page } from "$app/state";
 import {
+  createCreateFolder,
   createCreateProject,
   createCreateTask,
+  createDeleteFolder,
   createDeleteTask,
+  createListFolders,
   createListMetadataFields,
   createListProjects,
   createListTasks,
+  createMoveProject,
   createToggleTask,
+  createUpdateFolder,
+  type Folder,
   type Project,
   type Task,
   type TaskInput,
 } from "./api/generated";
+import { projectOrder } from "./folders";
 import { parseTaskInput } from "./task-parser";
 import { dateFromToday, todaySection } from "./task-views";
 
@@ -40,9 +47,14 @@ export function useTasks() {
 function buildTaskStore() {
   const tasksQuery = createListTasks();
   const projectsQuery = createListProjects();
+  const foldersQuery = createListFolders();
   const fieldsQuery = createListMetadataFields();
   const createTask = createCreateTask();
   const createProject = createCreateProject();
+  const createFolder = createCreateFolder();
+  const renameFolder = createUpdateFolder();
+  const deleteFolderMutation = createDeleteFolder();
+  const moveProjectMutation = createMoveProject();
   const toggleTaskMutation = createToggleTask();
   const deleteTaskMutation = createDeleteTask();
 
@@ -61,15 +73,16 @@ function buildTaskStore() {
 
   const tasks = $derived<Task[]>(tasksQuery.data?.data ?? []);
   const fields = $derived(fieldsQuery.data?.data ?? []);
-  const projects = $derived<Project[]>(
-    [...(projectsQuery.data?.data ?? [])].sort((a, b) =>
-      a.name === "Inbox" ? -1 : b.name === "Inbox" ? 1 : a.name.localeCompare(b.name),
-    ),
-  );
+  const folders = $derived<Folder[]>(foldersQuery.data?.data ?? []);
+  const projects = $derived<Project[]>([...(projectsQuery.data?.data ?? [])].sort(projectOrder));
   const loading = $derived(tasksQuery.isPending);
   const busy = $derived(
     createTask.isPending ||
       createProject.isPending ||
+      createFolder.isPending ||
+      renameFolder.isPending ||
+      deleteFolderMutation.isPending ||
+      moveProjectMutation.isPending ||
       toggleTaskMutation.isPending ||
       deleteTaskMutation.isPending,
   );
@@ -77,9 +90,14 @@ function buildTaskStore() {
     errorMessage(
       tasksQuery.error ??
         projectsQuery.error ??
+        foldersQuery.error ??
         fieldsQuery.error ??
         createTask.error ??
         createProject.error ??
+        createFolder.error ??
+        renameFolder.error ??
+        deleteFolderMutation.error ??
+        moveProjectMutation.error ??
         toggleTaskMutation.error ??
         deleteTaskMutation.error,
     ),
@@ -183,6 +201,65 @@ function buildTaskStore() {
     }
   }
 
+  /** Returns the new folder id, or null when the name was blank or the request failed. */
+  async function addFolder(name: string, parentId: string | null) {
+    if (!name.trim() || busy) return null;
+
+    try {
+      const response = await createFolder.mutateAsync({ data: { name: name.trim(), parentId } });
+      if (response.status !== 201) throw new Error(response.data);
+      return response.data.id;
+    } catch {
+      // The mutation exposes the error through syncError.
+      return null;
+    }
+  }
+
+  /** Renames and re-parents in one request, so the current parent has to travel with the name. */
+  async function moveFolder(id: string, parentId: string | null) {
+    const folder = folders.find((item) => item.id === id);
+    if (!folder || busy || folder.parentId === parentId) return;
+
+    try {
+      await renameFolder.mutateAsync({
+        id,
+        data: { name: folder.name, parentId },
+      });
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
+  }
+
+  async function renameFolderTo(id: string, name: string, parentId: string | null) {
+    if (!name.trim() || busy) return;
+    try {
+      await renameFolder.mutateAsync({ id, data: { name: name.trim(), parentId } });
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
+  }
+
+  async function removeFolder(id: string) {
+    if (busy) return;
+    try {
+      await deleteFolderMutation.mutateAsync({ id });
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
+  }
+
+  /** Files a project into a folder, or at the top level when `folderId` is null. */
+  async function moveProject(id: string, folderId: string | null) {
+    const project = projectById(id);
+    if (!project || busy || (project.folderId ?? null) === folderId) return;
+
+    try {
+      await moveProjectMutation.mutateAsync({ id, data: { folderId } });
+    } catch {
+      // The mutation exposes the error through syncError.
+    }
+  }
+
   async function toggleTask(id: string) {
     const task = tasks.find((item) => item.id === id);
     if (!task || busy) return;
@@ -212,6 +289,9 @@ function buildTaskStore() {
     },
     get fields() {
       return fields;
+    },
+    get folders() {
+      return folders;
     },
     get projects() {
       return projects;
@@ -250,6 +330,11 @@ function buildTaskStore() {
     openComposer,
     addTask,
     addProject,
+    addFolder,
+    moveFolder,
+    renameFolderTo,
+    removeFolder,
+    moveProject,
     toggleTask,
     deleteTask,
     answerConfirm,

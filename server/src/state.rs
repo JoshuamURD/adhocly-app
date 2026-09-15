@@ -3,6 +3,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 
 use crate::{
+    folders::{FolderRepository, SqliteFolderRepository},
     projects::{ProjectRepository, SqliteProjectRepository},
     reminders::{ReminderRepository, SqliteReminderRepository},
     tasks::{SqliteTaskRepository, TaskRepository},
@@ -14,6 +15,7 @@ pub(crate) struct AppState {
     pool: SqlitePool,
     pub(crate) tasks: Arc<dyn TaskRepository>,
     pub(crate) projects: Arc<dyn ProjectRepository>,
+    pub(crate) folders: Arc<dyn FolderRepository>,
     pub(crate) reminders: Arc<dyn ReminderRepository>,
 }
 
@@ -22,6 +24,7 @@ impl AppState {
         Self {
             tasks: Arc::new(SqliteTaskRepository::new(pool.clone())),
             projects: Arc::new(SqliteProjectRepository::new(pool.clone())),
+            folders: Arc::new(SqliteFolderRepository::new(pool.clone())),
             reminders: Arc::new(SqliteReminderRepository::new(pool.clone())),
             pool,
         }

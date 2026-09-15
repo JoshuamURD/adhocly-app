@@ -8,7 +8,177 @@
     },
     "version": "0.1.0"
   },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local adhocly API"
+    }
+  ],
   "paths": {
+    "/api/folders": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "listFolders",
+        "responses": {
+          "200": {
+            "description": "Every folder, flat; `parentId` carries the nesting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Folder"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "createFolder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or duplicate name",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Parent folder not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folders/{id}": {
+      "put": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "updateFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed and moved; `parentId` replaces the current parent, so omitting it moves the folder to the top level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or duplicate name, or a move inside the folder's own subtree",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Folder or parent folder not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "deleteFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Folder deleted; its projects and subfolders move to its parent"
+          },
+          "404": {
+            "description": "Folder not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata-fields": {
       "get": {
         "tags": [
@@ -355,6 +525,67 @@
           },
           "404": {
             "description": "Project not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/folder": {
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "moveProject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectFolderInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Project filed into the folder, or at the top level when folderId is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Inbox cannot be filed",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or folder not found",
             "content": {
               "text/plain": {
                 "schema": {
@@ -748,6 +979,54 @@
           "choice"
         ]
       },
+      "Folder": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` is the top level; folders nest to any depth."
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "FolderInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted or null creates/moves the folder at the top level."
+          }
+        }
+      },
       "MetadataField": {
         "type": "object",
         "required": [
@@ -856,6 +1135,13 @@
           "createdAt": {
             "type": "string"
           },
+          "folderId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` means the project sits at the top level of the sidebar."
+          },
           "id": {
             "type": "string"
           },
@@ -871,6 +1157,18 @@
           },
           "updatedAt": {
             "type": "string"
+          }
+        }
+      },
+      "ProjectFolderInput": {
+        "type": "object",
+        "properties": {
+          "folderId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted or null files the project at the top level."
           }
         }
       },
@@ -1043,6 +1341,10 @@
     {
       "name": "projects",
       "description": "Projects and their user-defined metadata"
+    },
+    {
+      "name": "folders",
+      "description": "Folders that group projects"
     },
     {
       "name": "reminders",

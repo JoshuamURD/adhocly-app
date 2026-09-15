@@ -39,6 +39,8 @@ impl FieldKind {
 pub(crate) struct Project {
     pub(crate) id: String,
     pub(crate) name: String,
+    /// `None` means the project sits at the top level of the sidebar.
+    pub(crate) folder_id: Option<String>,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     /// Loaded in a second query, never a column on `projects`.
@@ -46,10 +48,17 @@ pub(crate) struct Project {
 }
 
 impl Project {
-    pub(crate) fn new(id: String, name: String, created_at: String, updated_at: String) -> Self {
+    pub(crate) fn new(
+        id: String,
+        name: String,
+        folder_id: Option<String>,
+        created_at: String,
+        updated_at: String,
+    ) -> Self {
         Self {
             id,
             name,
+            folder_id,
             created_at,
             updated_at,
             metadata: Vec::new(),
@@ -77,6 +86,13 @@ pub(crate) struct MetadataField {
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct ProjectInput {
     pub(crate) name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectFolderInput {
+    /// Omitted or null files the project at the top level.
+    pub(crate) folder_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

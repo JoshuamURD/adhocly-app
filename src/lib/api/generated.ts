@@ -34,6 +34,27 @@ export const FieldKind = {
   choice: 'choice',
 } as const;
 
+export interface Folder {
+  createdAt: string;
+  id: string;
+  name: string;
+  /**
+     * `None` is the top level; folders nest to any depth.
+     * @nullable
+     */
+  parentId?: string | null;
+  updatedAt: string;
+}
+
+export interface FolderInput {
+  name: string;
+  /**
+     * Omitted or null creates/moves the folder at the top level.
+     * @nullable
+     */
+  parentId?: string | null;
+}
+
 export interface MetadataField {
   createdAt: string;
   id: string;
@@ -68,11 +89,24 @@ export interface MetadataValueInput {
 
 export interface Project {
   createdAt: string;
+  /**
+     * `None` means the project sits at the top level of the sidebar.
+     * @nullable
+     */
+  folderId?: string | null;
   id: string;
   /** Loaded in a second query, never a column on `projects`. */
   metadata: MetadataValue[];
   name: string;
   updatedAt: string;
+}
+
+export interface ProjectFolderInput {
+  /**
+     * Omitted or null files the project at the top level.
+     * @nullable
+     */
+  folderId?: string | null;
 }
 
 export interface ProjectInput {
@@ -138,6 +172,418 @@ export interface ToggleResult {
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
+
+export type listFoldersResponse200 = {
+  data: Folder[]
+  status: 200
+}
+
+export type listFoldersResponseSuccess = (listFoldersResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listFoldersResponse = (listFoldersResponseSuccess)
+
+export const getListFoldersUrl = () => {
+
+
+
+
+  return `/api/folders`
+}
+
+export const listFolders = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listFoldersResponse> => {
+
+  return apiFetch<listFoldersResponse>(getListFoldersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListFoldersQueryKey = () => {
+    return [
+    `/api/folders`
+    ] as const;
+    }
+
+
+export const getListFoldersQueryOptions = <TData = Awaited<ReturnType<typeof listFolders>>, TError = unknown>( options?: { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof listFolders>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListFoldersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFolders>>> = ({ signal }) => listFolders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as CreateQueryOptions<Awaited<ReturnType<typeof listFolders>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListFoldersQueryResult = NonNullable<Awaited<ReturnType<typeof listFolders>>>
+export type ListFoldersQueryError = unknown
+
+
+
+export function createListFolders<TData = Awaited<ReturnType<typeof listFolders>>, TError = unknown>(
+  options?: () => { query?:Partial<CreateQueryOptions<Awaited<ReturnType<typeof listFolders>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient
+ ): CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+
+
+  const query = createQuery(() => getListFoldersQueryOptions(options?.()), queryClient) as CreateQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return query
+}
+
+
+/**
+ * @summary Invalidates the {@link createListFolders} query
+ */
+export const invalidateListFolders = async (
+ queryClient: QueryClient,  options?: InvalidateOptions
+  ): Promise<QueryClient> => {
+
+  await queryClient.invalidateQueries({ queryKey: getListFoldersQueryKey() }, options);
+
+  return queryClient;
+}
+
+
+
+
+
+export type createFolderResponse201 = {
+  data: Folder
+  status: 201
+}
+
+export type createFolderResponse400 = {
+  data: string
+  status: 400
+}
+
+export type createFolderResponse404 = {
+  data: string
+  status: 404
+}
+
+export type createFolderResponseSuccess = (createFolderResponse201) & {
+  headers: Headers;
+};
+export type createFolderResponseError = (createFolderResponse400 | createFolderResponse404) & {
+  headers: Headers;
+};
+
+export type createFolderResponse = (createFolderResponseSuccess | createFolderResponseError)
+
+export const getCreateFolderUrl = () => {
+
+
+
+
+  return `/api/folders`
+}
+
+export const createFolder = async (folderInput: FolderInput, options?: Parameters<typeof apiFetch>[1]): Promise<createFolderResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<createFolderResponse>(getCreateFolderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(folderInput)
+  }
+);}
+
+
+
+
+
+export const getCreateFolderMutationKey = () => ['createFolder'] as const;
+
+export const getCreateFolderMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof createFolder>>, TError,CreateFolderMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof createFolder>>, TError,CreateFolderMutationVariables, TContext> => {
+
+const mutationKey = getCreateFolderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFolder>>, CreateFolderMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createFolder(data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof createFolder>>, variables: CreateFolderMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListFoldersQueryKey(), getListProjectsQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type CreateFolderMutationResult = NonNullable<Awaited<ReturnType<typeof createFolder>>>
+    export type CreateFolderMutationBody = FolderInput
+    export type CreateFolderMutationError = string
+    export type CreateFolderMutationVariables = {data: FolderInput}
+
+    export const createCreateFolder = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof createFolder>>, TError,CreateFolderMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof createFolder>>,
+        TError,
+        CreateFolderMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getCreateFolderMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type updateFolderResponse200 = {
+  data: Folder
+  status: 200
+}
+
+export type updateFolderResponse400 = {
+  data: string
+  status: 400
+}
+
+export type updateFolderResponse404 = {
+  data: string
+  status: 404
+}
+
+export type updateFolderResponseSuccess = (updateFolderResponse200) & {
+  headers: Headers;
+};
+export type updateFolderResponseError = (updateFolderResponse400 | updateFolderResponse404) & {
+  headers: Headers;
+};
+
+export type updateFolderResponse = (updateFolderResponseSuccess | updateFolderResponseError)
+
+export const getUpdateFolderUrl = (id: string,) => {
+
+
+
+
+  return `/api/folders/${id}`
+}
+
+export const updateFolder = async (id: string,
+    folderInput: FolderInput, options?: Parameters<typeof apiFetch>[1]): Promise<updateFolderResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<updateFolderResponse>(getUpdateFolderUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(folderInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateFolderMutationKey = () => ['updateFolder'] as const;
+
+export const getUpdateFolderMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof updateFolder>>, TError,UpdateFolderMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof updateFolder>>, TError,UpdateFolderMutationVariables, TContext> => {
+
+const mutationKey = getUpdateFolderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFolder>>, UpdateFolderMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateFolder(id,data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof updateFolder>>, variables: UpdateFolderMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListFoldersQueryKey(), getListProjectsQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type UpdateFolderMutationResult = NonNullable<Awaited<ReturnType<typeof updateFolder>>>
+    export type UpdateFolderMutationBody = FolderInput
+    export type UpdateFolderMutationError = string
+    export type UpdateFolderMutationVariables = {id: string;data: FolderInput}
+
+    export const createUpdateFolder = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof updateFolder>>, TError,UpdateFolderMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof updateFolder>>,
+        TError,
+        UpdateFolderMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getUpdateFolderMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type deleteFolderResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteFolderResponse404 = {
+  data: string
+  status: 404
+}
+
+export type deleteFolderResponseSuccess = (deleteFolderResponse204) & {
+  headers: Headers;
+};
+export type deleteFolderResponseError = (deleteFolderResponse404) & {
+  headers: Headers;
+};
+
+export type deleteFolderResponse = (deleteFolderResponseSuccess | deleteFolderResponseError)
+
+export const getDeleteFolderUrl = (id: string,) => {
+
+
+
+
+  return `/api/folders/${id}`
+}
+
+export const deleteFolder = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<deleteFolderResponse> => {
+
+  return apiFetch<deleteFolderResponse>(getDeleteFolderUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteFolderMutationKey = () => ['deleteFolder'] as const;
+
+export const getDeleteFolderMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof deleteFolder>>, TError,DeleteFolderMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof deleteFolder>>, TError,DeleteFolderMutationVariables, TContext> => {
+
+const mutationKey = getDeleteFolderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteFolder>>, DeleteFolderMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteFolder(id,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof deleteFolder>>, variables: DeleteFolderMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListFoldersQueryKey(), getListProjectsQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type DeleteFolderMutationResult = NonNullable<Awaited<ReturnType<typeof deleteFolder>>>
+
+    export type DeleteFolderMutationError = string
+    export type DeleteFolderMutationVariables = {id: string}
+
+    export const createDeleteFolder = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof deleteFolder>>, TError,DeleteFolderMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof deleteFolder>>,
+        TError,
+        DeleteFolderMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getDeleteFolderMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
 
 export type listMetadataFieldsResponse200 = {
   data: MetadataField[]
@@ -1057,6 +1503,119 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       const backupQueryClient = useQueryClient(queryClient?.());
       return createMutation(() => ({ ...getDeleteProjectMutationOptions(backupQueryClient, options?.()) }), queryClient);
+    }
+
+export type moveProjectResponse200 = {
+  data: Project
+  status: 200
+}
+
+export type moveProjectResponse400 = {
+  data: string
+  status: 400
+}
+
+export type moveProjectResponse404 = {
+  data: string
+  status: 404
+}
+
+export type moveProjectResponseSuccess = (moveProjectResponse200) & {
+  headers: Headers;
+};
+export type moveProjectResponseError = (moveProjectResponse400 | moveProjectResponse404) & {
+  headers: Headers;
+};
+
+export type moveProjectResponse = (moveProjectResponseSuccess | moveProjectResponseError)
+
+export const getMoveProjectUrl = (id: string,) => {
+
+
+
+
+  return `/api/projects/${id}/folder`
+}
+
+export const moveProject = async (id: string,
+    projectFolderInput: ProjectFolderInput, options?: Parameters<typeof apiFetch>[1]): Promise<moveProjectResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<moveProjectResponse>(getMoveProjectUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(projectFolderInput)
+  }
+);}
+
+
+
+
+
+export const getMoveProjectMutationKey = () => ['moveProject'] as const;
+
+export const getMoveProjectMutationOptions = <TError = string,
+    TContext = unknown>(queryClient: QueryClient, options?: { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof moveProject>>, TError,MoveProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+): CreateMutationOptions<Awaited<ReturnType<typeof moveProject>>, TError,MoveProjectMutationVariables, TContext> => {
+
+const mutationKey = getMoveProjectMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof moveProject>>, MoveProjectMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  moveProject(id,data,requestOptions)
+        }
+
+  const onSuccess = (data: Awaited<ReturnType<typeof moveProject>>, variables: MoveProjectMutationVariables, onMutateResult: TContext, context: MutationFunctionContext) => {
+        if (!options?.skipInvalidation) {
+        queryClient.invalidateQueries({ predicate: (query) => [getListProjectsQueryKey(), getListTasksQueryKey()].some((queryKey) => matchQuery({ queryKey }, query)) });
+        }
+        mutationOptions?.onSuccess?.(data, variables, onMutateResult, context);
+      };
+
+
+
+
+  return  { ...mutationOptions, mutationFn, onSuccess }}
+
+    export type MoveProjectMutationResult = NonNullable<Awaited<ReturnType<typeof moveProject>>>
+    export type MoveProjectMutationBody = ProjectFolderInput
+    export type MoveProjectMutationError = string
+    export type MoveProjectMutationVariables = {id: string;data: ProjectFolderInput}
+
+    export const createMoveProject = <TError = string,
+    TContext = unknown>(options?: () => { mutation?:CreateMutationOptions<Awaited<ReturnType<typeof moveProject>>, TError,MoveProjectMutationVariables, TContext>, skipInvalidation?: boolean, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: () => QueryClient): CreateMutationResult<
+        Awaited<ReturnType<typeof moveProject>>,
+        TError,
+        MoveProjectMutationVariables,
+        TContext
+      > => {
+      const backupQueryClient = useQueryClient(queryClient?.());
+      return createMutation(() => ({ ...getMoveProjectMutationOptions(backupQueryClient, options?.()) }), queryClient);
     }
 
 export type setProjectMetadataResponse204 = {

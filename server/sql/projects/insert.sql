@@ -4,4 +4,3 @@ VALUES (
     strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
     strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 )
-RETURNING id, name, created_at, updated_at

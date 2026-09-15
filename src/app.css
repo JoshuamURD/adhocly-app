@@ -38,6 +38,10 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
+  /* The drawer tree doubles as a touch drag surface: no long-press callout, no text selection.
+     Inputs keep theirs, or the inline folder and project fields would be unusable. */
+  #project-drawer nav { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #project-drawer input { -webkit-user-select: text; user-select: text; }
 }
 
 /* The square hit target shared by the top bar, drawer, composer and task rows. */

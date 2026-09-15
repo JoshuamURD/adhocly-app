@@ -7,10 +7,11 @@ use axum::{
 use crate::{error::AppError, state::AppState};
 
 use super::{
-    model::{INBOX_ID, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValueInput, Project, ProjectInput},
+    model::{ProjectFolderInput, INBOX_ID, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValueInput, Project, ProjectInput},
 };
 
-fn name_or_invalid(name: &str) -> Result<&str, AppError> {
+// Shared with the folders module, which validates names the same way.
+pub(crate) fn name_or_invalid(name: &str) -> Result<&str, AppError> {
     let name = name.trim();
     if name.is_empty() {
         return Err(AppError::Invalid("name is required"));
@@ -111,6 +112,32 @@ pub(crate) async fn delete_project(
     }
     state.projects.delete(&id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/projects/{id}/folder",
+    operation_id = "moveProject",
+    params(("id" = String, Path, description = "Project id")),
+    request_body = ProjectFolderInput,
+    responses(
+        (status = 200, description = "Project filed into the folder, or at the top level when folderId is null", body = Project),
+        (status = 400, description = "Inbox cannot be filed", body = String),
+        (status = 404, description = "Project or folder not found", body = String),
+    ),
+    tag = "projects"
+)]
+pub(crate) async fn move_project(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    Json(input): Json<ProjectFolderInput>,
+) -> std::result::Result<Json<Project>, AppError> {
+    if id == INBOX_ID {
+        return Err(AppError::Invalid("Inbox cannot be filed"));
+    }
+    Ok(Json(
+        state.projects.set_folder(&id, input.folder_id.as_deref()).await?,
+    ))
 }
 
 #[utoipa::path(

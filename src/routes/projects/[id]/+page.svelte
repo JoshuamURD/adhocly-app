@@ -27,7 +27,7 @@
   <TaskPage title={project?.name ?? "Project"} tasks={shown} {sections}>
     {#snippet children()}
       {#if project}
-        <ProjectMetadata {project} fields={store.fields} {onDeleted} />
+        <ProjectMetadata {project} fields={store.fields} folders={store.folders} {onDeleted} />
       {/if}
     {/snippet}
   </TaskPage>

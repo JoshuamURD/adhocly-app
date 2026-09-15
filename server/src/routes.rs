@@ -5,9 +5,10 @@ use utoipa::OpenApi;
 
 use crate::{
     error::AppError,
+    folders::{self, Folder, FolderInput},
     projects::{
         self, FieldKind, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValue,
-        MetadataValueInput, Project, ProjectInput,
+        MetadataValueInput, Project, ProjectFolderInput, ProjectInput,
     },
     reminders::{self, Reminder},
     state::AppState,
@@ -16,6 +17,9 @@ use crate::{
 
 #[derive(OpenApi)]
 #[openapi(
+    // Without this the API client built into the docs (Scalar) resolves relative paths against the
+    // docs' own origin and every "Send request" 404s. The generated openapi.json carries it too.
+    servers((url = "http://localhost:3000", description = "Local adhocly API")),
     paths(
         health,
         tasks::list_tasks,
@@ -34,6 +38,11 @@ use crate::{
         projects::update_metadata_field,
         projects::delete_metadata_field,
         projects::set_project_metadata,
+        projects::move_project,
+        folders::list_folders,
+        folders::create_folder,
+        folders::update_folder,
+        folders::delete_folder,
         reminders::get_reminder
     ),
     components(schemas(
@@ -43,6 +52,9 @@ use crate::{
         ToggleResult,
         Project,
         ProjectInput,
+        ProjectFolderInput,
+        Folder,
+        FolderInput,
         MetadataField,
         MetadataFieldInput,
         MetadataFieldUpdate,
@@ -54,6 +66,7 @@ use crate::{
     tags(
         (name = "tasks", description = "Task persistence API"),
         (name = "projects", description = "Projects and their user-defined metadata"),
+        (name = "folders", description = "Folders that group projects"),
         (name = "reminders", description = "Task reminders")
     )
 )]
@@ -90,6 +103,18 @@ pub(crate) fn app(db: SqlitePool) -> Router {
         .route(
             "/api/projects/{id}/metadata/{fieldId}",
             axum::routing::put(projects::set_project_metadata),
+        )
+        .route(
+            "/api/projects/{id}/folder",
+            axum::routing::put(projects::move_project),
+        )
+        .route(
+            "/api/folders",
+            get(folders::list_folders).post(folders::create_folder),
+        )
+        .route(
+            "/api/folders/{id}",
+            axum::routing::put(folders::update_folder).delete(folders::delete_folder),
         )
         .route(
             "/api/metadata-fields",

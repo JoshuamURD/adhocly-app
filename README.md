@@ -37,6 +37,16 @@ created.
 
 Deleting a project moves its tasks to Inbox and drops its metadata. Inbox itself is seeded and cannot be deleted.
 
+## Folders
+
+Folders group projects in the drawer and nest as deep as you like. Drag a project, or a whole folder, onto
+another folder to file it there; drop it anywhere outside a folder to put it back at the top level. Chevrons
+collapse a folder, and what is collapsed is remembered between launches. Each folder row renames and deletes:
+deleting a folder moves its projects and its subfolders up to the folder's parent.
+
+Dragging needs a pointer, so project settings carries the same move as a **Folder** picker, and every folder
+control is a real button.
+
 ## Run
 
 Install the configured Bun and Rust toolchains with [mise](https://mise.jdx.dev/), then run the SQLite API and iOS app together:
@@ -48,7 +58,7 @@ mise run dev
 ```
 
 The API listens on `http://localhost:3000`, exposes `/health`, `/openapi.json`, `/api/tasks`,
-`/api/projects`, and `/api/metadata-fields`, and stores its SQLite database at `~/.local/state/adhocly/adhocly.db` when run through mise. Vite proxies `/api` during development; set `PUBLIC_API_URL` to the API origin, e.g. `http://192.168.1.20:3000`, when the API is hosted separately.
+`/api/projects`, `/api/folders`, and `/api/metadata-fields`, and stores its SQLite database at `~/.local/state/adhocly/adhocly.db` when run through mise. Vite proxies `/api` during development; set `PUBLIC_API_URL` to the API origin, e.g. `http://192.168.1.20:3000`, when the API is hosted separately.
 
 OpenAPI is generated from the Rust handlers with `utoipa`; Orval turns `server/openapi.json` into `src/lib/api/generated.ts`:
 
@@ -56,10 +66,16 @@ OpenAPI is generated from the Rust handlers with `utoipa`; Orval turns `server/o
 bun run api:gen
 ```
 
+`mise run server` also serves that spec as browsable [Scalar](https://scalar.com) docs on
+`http://localhost:3001`. The docs task watches `server/openapi.json`, so `api:gen` updates the page live;
+the first run downloads the Scalar CLI. The spec's `servers` entry is what the docs' **Test Request** sends
+to, so requests from the docs only reach an API running at `http://localhost:3000`.
+
 Individual commands:
 
 ```sh
-mise run server       # backend only
+mise run server       # backend only, plus Scalar API docs on :3001
+mise run api:docs     # Scalar API docs only
 mise run mobile:ios   # iOS app only
 mise run api:gen      # regenerate OpenAPI + frontend client
 bun run dev           # browser

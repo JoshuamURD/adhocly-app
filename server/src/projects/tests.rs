@@ -44,11 +44,13 @@ async fn create_rename_and_delete_moves_tasks_to_inbox() {
     let (_, Json(project)) = create_project(
         State(state.clone()),
         Json(ProjectInput {
+            id: Some("project-1".into()),
             name: "  Client Work  ".into(),
         }),
     )
     .await
     .unwrap();
+    assert_eq!(project.id, "project-1");
     assert_eq!(project.name, "Client Work");
     assert!(project.metadata.is_empty());
 
@@ -56,6 +58,7 @@ async fn create_rename_and_delete_moves_tasks_to_inbox() {
     let conflict = create_project(
         State(state.clone()),
         Json(ProjectInput {
+            id: None,
             name: "client work".into(),
         }),
     )
@@ -69,6 +72,7 @@ async fn create_rename_and_delete_moves_tasks_to_inbox() {
         Path(project.id.clone()),
         State(state.clone()),
         Json(ProjectInput {
+            id: None,
             name: "Acme".into(),
         }),
     )
@@ -101,6 +105,7 @@ async fn metadata_fields_round_trip_and_validate_values() {
     let (_, Json(client)) = create_metadata_field(
         State(state.clone()),
         Json(MetadataFieldInput {
+            id: Some("field-1".into()),
             name: "Client".into(),
             kind: FieldKind::Text,
             options: vec!["ignored".into()],
@@ -108,11 +113,13 @@ async fn metadata_fields_round_trip_and_validate_values() {
     )
     .await
     .unwrap();
+    assert_eq!(client.id, "field-1");
     assert!(client.options.is_empty());
 
     let (_, Json(budget)) = create_metadata_field(
         State(state.clone()),
         Json(MetadataFieldInput {
+            id: None,
             name: "Budget".into(),
             kind: FieldKind::Number,
             options: vec![],
@@ -124,6 +131,7 @@ async fn metadata_fields_round_trip_and_validate_values() {
     let (_, Json(status)) = create_metadata_field(
         State(state.clone()),
         Json(MetadataFieldInput {
+            id: None,
             name: "Status".into(),
             kind: FieldKind::Choice,
             options: vec![
@@ -141,6 +149,7 @@ async fn metadata_fields_round_trip_and_validate_values() {
     let no_options = create_metadata_field(
         State(state.clone()),
         Json(MetadataFieldInput {
+            id: None,
             name: "Stage".into(),
             kind: FieldKind::Choice,
             options: vec![],
@@ -156,6 +165,7 @@ async fn metadata_fields_round_trip_and_validate_values() {
     let (_, Json(project)) = create_project(
         State(state.clone()),
         Json(ProjectInput {
+            id: None,
             name: "Website".into(),
         }),
     )
@@ -241,7 +251,14 @@ async fn metadata_fields_round_trip_and_validate_values() {
 
     let Json(fields) = list_metadata_fields(State(state.clone())).await.unwrap();
     assert_eq!(fields.len(), 3);
-    assert_eq!(fields[2].kind, FieldKind::Choice);
+    assert_eq!(
+        fields
+            .iter()
+            .find(|field| field.name == "Status")
+            .unwrap()
+            .kind,
+        FieldKind::Choice
+    );
 
     // Renaming keeps the kind and option list; values are untouched.
     let Json(renamed) = update_metadata_field(

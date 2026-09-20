@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT remind_at, task_id FROM task_reminders WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "remind_at",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_reminders",
+            "name": "remind_at"
+          }
+        }
+      },
+      {
+        "name": "task_id",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_reminders",
+            "name": "task_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "0b9239db69617ac5e5c7fa38692e32c1a4673a03dfd0459a7758b3d86da1c87a"
+}

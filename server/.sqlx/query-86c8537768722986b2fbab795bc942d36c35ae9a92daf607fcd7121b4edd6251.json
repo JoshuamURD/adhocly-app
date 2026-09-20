@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO projects (id, name, created_at, updated_at)\nVALUES (\n    ?, ?,\n    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),\n    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\n)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "86c8537768722986b2fbab795bc942d36c35ae9a92daf607fcd7121b4edd6251"
+}

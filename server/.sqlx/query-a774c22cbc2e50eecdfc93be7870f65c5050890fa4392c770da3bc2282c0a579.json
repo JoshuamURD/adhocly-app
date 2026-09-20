@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT field_id, value FROM project_metadata WHERE project_id = ? ORDER BY field_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "field_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "project_metadata",
+            "name": "field_id"
+          }
+        }
+      },
+      {
+        "name": "value",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "project_metadata",
+            "name": "value"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a774c22cbc2e50eecdfc93be7870f65c5050890fa4392c770da3bc2282c0a579"
+}

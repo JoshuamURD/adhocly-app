@@ -21,6 +21,7 @@ async fn create(state: &AppState, name: &str, parent_id: Option<&str>) -> Folder
     let (_, Json(folder)) = create_folder(
         State(state.clone()),
         Json(FolderInput {
+            id: None,
             name: name.into(),
             parent_id: parent_id.map(str::to_owned),
         }),
@@ -54,6 +55,7 @@ async fn folders_nest_rename_and_move_without_closing_a_loop() {
     let duplicate = create_folder(
         State(state.clone()),
         Json(FolderInput {
+            id: None,
             name: "clients".into(),
             parent_id: Some(work.id.clone()),
         }),
@@ -67,6 +69,7 @@ async fn folders_nest_rename_and_move_without_closing_a_loop() {
     let missing_parent = create_folder(
         State(state.clone()),
         Json(FolderInput {
+            id: None,
             name: "Orphan".into(),
             parent_id: Some("nope".into()),
         }),
@@ -81,6 +84,7 @@ async fn folders_nest_rename_and_move_without_closing_a_loop() {
             Path(work.id.clone()),
             State(state.clone()),
             Json(FolderInput {
+                id: None,
                 name: "Work".into(),
                 parent_id: Some(parent.clone()),
             }),
@@ -95,6 +99,7 @@ async fn folders_nest_rename_and_move_without_closing_a_loop() {
         Path(clients.id.clone()),
         State(state.clone()),
         Json(FolderInput {
+            id: None,
             name: "Accounts".into(),
             parent_id: None,
         }),
@@ -119,6 +124,7 @@ async fn deleting_a_folder_hands_its_projects_and_subfolders_to_its_parent() {
     let (_, Json(project)) = create_project(
         State(state.clone()),
         Json(ProjectInput {
+            id: None,
             name: "Website".into(),
         }),
     )
@@ -201,4 +207,3 @@ async fn deleting_a_folder_hands_its_projects_and_subfolders_to_its_parent() {
         .unwrap_err();
     assert_eq!(gone.to_string(), "folder not found");
 }
-

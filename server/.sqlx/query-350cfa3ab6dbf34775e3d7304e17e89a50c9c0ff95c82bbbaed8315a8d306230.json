@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE projects SET folder_id = ? WHERE folder_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "350cfa3ab6dbf34775e3d7304e17e89a50c9c0ff95c82bbbaed8315a8d306230"
+}

@@ -71,6 +71,11 @@ pub(crate) async fn create_task(
     Json(input): Json<TaskInput>,
 ) -> std::result::Result<(StatusCode, Json<Task>), AppError> {
     validate(&input)?;
+    if input.id.starts_with("next:") {
+        return Err(AppError::Invalid(
+            "next: ids are reserved for recurring tasks",
+        ));
+    }
     Ok((StatusCode::CREATED, Json(state.tasks.create(&input).await?)))
 }
 
@@ -107,6 +112,7 @@ pub(crate) async fn update_task(
     request_body = ToggleInput,
     responses(
         (status = 200, description = "Toggled task and optional next recurring task", body = ToggleResult),
+        (status = 400, description = "Invalid next task id", body = String),
         (status = 404, description = "Task not found", body = String),
     ),
     tag = "tasks"
@@ -116,7 +122,13 @@ pub(crate) async fn toggle_task(
     State(state): State<AppState>,
     Json(input): Json<ToggleInput>,
 ) -> std::result::Result<Json<ToggleResult>, AppError> {
-    Ok(Json(state.tasks.toggle(&id, input.completed).await?))
+    let next_id = input.next_id.as_deref().map(str::trim);
+    if next_id == Some("") {
+        return Err(AppError::Invalid("nextId cannot be blank"));
+    }
+    Ok(Json(
+        state.tasks.toggle(&id, input.completed, next_id).await?,
+    ))
 }
 
 #[utoipa::path(

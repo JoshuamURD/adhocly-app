@@ -701,6 +701,95 @@
         }
       }
     },
+    "/api/sync": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "operationId": "getSyncSnapshot",
+        "responses": {
+          "200": {
+            "description": "Atomic server snapshot and entity revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSnapshot"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sync"
+        ],
+        "operationId": "applySyncOperation",
+        "parameters": [
+          {
+            "name": "snapshot",
+            "in": "query",
+            "description": "Set false to omit the full snapshot from the reply; absent means true",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncOperation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Committed or previously committed mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid mutation",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or mutation id conflict",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks": {
       "get": {
         "tags": [
@@ -932,6 +1021,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid next task id",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Task not found",
             "content": {
@@ -971,6 +1070,16 @@
   },
   "components": {
     "schemas": {
+      "BTreeMap": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "propertyNames": {
+          "type": "string"
+        }
+      },
       "FieldKind": {
         "type": "string",
         "enum": [
@@ -1015,6 +1124,13 @@
           "name"
         ],
         "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional client-selected entity id; sync uses a separate mutation id for safe replay."
+          },
           "name": {
             "type": "string"
           },
@@ -1064,6 +1180,13 @@
           "kind"
         ],
         "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional client-selected entity id; sync uses a separate mutation id for safe replay."
+          },
           "kind": {
             "$ref": "#/components/schemas/FieldKind"
           },
@@ -1178,6 +1301,13 @@
           "name"
         ],
         "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional client-selected entity id; sync uses a separate mutation id for safe replay."
+          },
           "name": {
             "type": "string"
           }
@@ -1195,6 +1325,95 @@
           },
           "taskId": {
             "type": "string"
+          }
+        }
+      },
+      "SyncOperation": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "method",
+          "body",
+          "expectedVersion"
+        ],
+        "properties": {
+          "body": {},
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SyncReply": {
+        "type": "object",
+        "required": [
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/BTreeMap",
+            "description": "Only versions changed by this operation, not unrelated changes from another device."
+          },
+          "snapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SyncSnapshot",
+                "description": "Omitted when the caller asked for `?snapshot=false`: the client only needs the snapshot for\nthe last operation of a batch, and a whole-dataset reply per operation is the dominant cost."
+              }
+            ]
+          }
+        }
+      },
+      "SyncSnapshot": {
+        "type": "object",
+        "required": [
+          "tasks",
+          "projects",
+          "folders",
+          "fields",
+          "versions"
+        ],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataField"
+            }
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Folder"
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          },
+          "versions": {
+            "$ref": "#/components/schemas/BTreeMap"
           }
         }
       },
@@ -1307,6 +1526,13 @@
         "properties": {
           "completed": {
             "type": "boolean"
+          },
+          "nextId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "If supplied, must equal `next:{taskId}`; all clients share one successor."
           }
         }
       },

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM project_metadata WHERE project_id = ? AND field_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "a63343c8627e575a09072a8f66d120c17323b88c43771434e3e52850a1bc85a1"
+}

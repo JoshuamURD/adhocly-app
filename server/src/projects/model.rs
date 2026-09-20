@@ -34,7 +34,7 @@ impl FieldKind {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Project {
     pub(crate) id: String,
@@ -66,14 +66,14 @@ impl Project {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema, FromRow)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MetadataValue {
     pub(crate) field_id: String,
     pub(crate) value: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MetadataField {
     pub(crate) id: String,
@@ -85,6 +85,8 @@ pub(crate) struct MetadataField {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct ProjectInput {
+    /// Optional client-selected entity id; sync uses a separate mutation id for safe replay.
+    pub(crate) id: Option<String>,
     pub(crate) name: String,
 }
 
@@ -98,6 +100,8 @@ pub(crate) struct ProjectFolderInput {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MetadataFieldInput {
+    /// Optional client-selected entity id; sync uses a separate mutation id for safe replay.
+    pub(crate) id: Option<String>,
     pub(crate) name: String,
     pub(crate) kind: FieldKind,
     #[serde(default)]

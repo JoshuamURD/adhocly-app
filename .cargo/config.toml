@@ -1,0 +1,8 @@
+# The Rust query!/query_file! macros check SQL against a database at compile time. Committing the
+# `server/.sqlx` cache they generate and forcing it on here means `cargo test`, CI, a fresh clone and
+# rust-analyzer all typecheck with no database and no per-machine setup.
+#
+# After changing SQL or adding a migration, refresh the cache with `mise run sqlx:prepare`.
+# `mise run test` runs `sqlx:check` first, so a stale cache fails the suite instead of passing quietly.
+[env]
+SQLX_OFFLINE = "true"

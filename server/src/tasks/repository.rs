@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    sync::{SyncOperation, Write},
+};
 
 use super::model::{Task, TaskInput, ToggleResult};
 
@@ -18,17 +21,23 @@ pub(crate) trait TaskRepository: Send + Sync {
     async fn create(&self, input: &TaskInput) -> Result<Task, AppError>;
     async fn update(&self, id: &str, input: &TaskInput) -> Result<Task, AppError>;
     /// Completing a repeating task creates its next occurrence in the same transaction.
-    async fn toggle(&self, id: &str, completed: bool) -> Result<ToggleResult, AppError>;
+    async fn toggle(
+        &self,
+        id: &str,
+        completed: bool,
+        next_id: Option<&str>,
+    ) -> Result<ToggleResult, AppError>;
     async fn delete(&self, id: &str) -> Result<(), AppError>;
 }
 
 pub(crate) struct SqliteTaskRepository {
     db: SqlitePool,
+    sync: Option<SyncOperation>,
 }
 
 impl SqliteTaskRepository {
-    pub(crate) fn new(db: SqlitePool) -> Self {
-        Self { db }
+    pub(crate) fn new(db: SqlitePool, sync: Option<SyncOperation>) -> Self {
+        Self { db, sync }
     }
 
     async fn fetch<'e, E>(executor: E, id: &str) -> Result<Task, AppError>
@@ -45,9 +54,7 @@ impl SqliteTaskRepository {
 #[async_trait]
 impl TaskRepository for SqliteTaskRepository {
     async fn list(&self) -> Result<Vec<Task>, AppError> {
-        Ok(sqlx::query_file_as!(Task, "sql/tasks/select_all.sql")
-            .fetch_all(&self.db)
-            .await?)
+        Self::list_in(&mut *self.db.acquire().await?).await
     }
 
     async fn get(&self, id: &str) -> Result<Task, AppError> {
@@ -55,76 +62,137 @@ impl TaskRepository for SqliteTaskRepository {
     }
 
     async fn create(&self, input: &TaskInput) -> Result<Task, AppError> {
-        sqlx::query_file!(
-            "sql/tasks/insert.sql",
-            &input.id,
-            input.title.trim(),
-            input.project_id.trim(),
-            &input.planned_for,
-            &input.due_on,
-            input.repeat_weekday,
-            input.completed
-        )
-        .execute(&self.db)
-        .await?;
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
+        }
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            sqlx::query_file!(
+                "sql/tasks/insert.sql",
+                &input.id,
+                input.title.trim(),
+                input.project_id.trim(),
+                &input.planned_for,
+                &input.due_on,
+                input.repeat_weekday,
+                input.completed
+            )
+            .execute(&mut *conn)
+            .await?;
 
-        Self::fetch(&self.db, &input.id).await
+            Self::fetch(&mut *conn, &input.id).await
+        };
+        write.commit(value?).await
     }
 
     async fn update(&self, id: &str, input: &TaskInput) -> Result<Task, AppError> {
-        let result = sqlx::query_file!(
-            "sql/tasks/update.sql",
-            input.title.trim(),
-            input.project_id.trim(),
-            &input.planned_for,
-            &input.due_on,
-            input.repeat_weekday,
-            input.completed,
-            id
-        )
-        .execute(&self.db)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("task"));
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
         }
-        Self::fetch(&self.db, id).await
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            let result = sqlx::query_file!(
+                "sql/tasks/update.sql",
+                input.title.trim(),
+                input.project_id.trim(),
+                &input.planned_for,
+                &input.due_on,
+                input.repeat_weekday,
+                input.completed,
+                id
+            )
+            .execute(&mut *conn)
+            .await?;
+
+            if result.rows_affected() == 0 {
+                return Err(AppError::NotFound("task"));
+            }
+            Self::fetch(&mut *conn, id).await
+        };
+        write.commit(value?).await
     }
 
-    async fn toggle(&self, id: &str, completed: bool) -> Result<ToggleResult, AppError> {
-        let mut transaction = self.db.begin().await?;
-        let current = Self::fetch(&mut *transaction, id).await?;
+    async fn toggle(
+        &self,
+        id: &str,
+        completed: bool,
+        next_id: Option<&str>,
+    ) -> Result<ToggleResult, AppError> {
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
+        }
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            let current = Self::fetch(&mut *conn, id).await?;
 
-        sqlx::query!(
+            sqlx::query!(
             "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
             completed,
             id
         )
-        .execute(&mut *transaction)
+        .execute(&mut *conn)
         .await?;
-        let task = Self::fetch(&mut *transaction, id).await?;
+            let task = Self::fetch(&mut *conn, id).await?;
 
-        let next_task = if !current.completed && completed && current.repeat_weekday.is_some() {
-            let next_id = uuid::Uuid::now_v7().to_string();
-            sqlx::query_file!("sql/tasks/insert_next_occurrence.sql", &next_id, id)
-                .execute(&mut *transaction)
-                .await?;
-            Some(Self::fetch(&mut *transaction, &next_id).await?)
-        } else {
-            None
+            let next_task = if completed && current.repeat_weekday.is_some() {
+                // One successor per occurrence, shared by every device (including browser clients).
+                // ponytail: ids grow with each occurrence; use UUIDv5 if very long recurrence chains matter.
+                let canonical = format!("next:{id}");
+                if next_id.is_some_and(|value| value != canonical) {
+                    return Err(AppError::Invalid(
+                        "nextId must be the canonical successor id",
+                    ));
+                }
+                let key = format!("tasks/{canonical}");
+                let seen: bool =
+                    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sync_versions WHERE key = ?)")
+                        .bind(&key)
+                        .fetch_one(&mut *conn)
+                        .await?;
+                // A deleted successor remains a tombstone: retries must not resurrect it.
+                if !seen {
+                    sqlx::query_file!("sql/tasks/insert_next_occurrence.sql", &canonical, id)
+                        .execute(&mut *conn)
+                        .await?;
+                }
+                sqlx::query_file_as!(Task, "sql/tasks/select_one.sql", &canonical)
+                    .fetch_optional(&mut *conn)
+                    .await?
+            } else {
+                None
+            };
+
+            Ok(ToggleResult { task, next_task })
         };
-
-        transaction.commit().await?;
-        Ok(ToggleResult { task, next_task })
+        write.commit(value?).await
     }
 
     async fn delete(&self, id: &str) -> Result<(), AppError> {
-        let result = sqlx::query!("DELETE FROM tasks WHERE id = ?", id)
-            .execute(&self.db)
-            .await?;
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("task"));
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
         }
-        Ok(())
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            let result = sqlx::query!("DELETE FROM tasks WHERE id = ?", id)
+                .execute(&mut *conn)
+                .await?;
+            if result.rows_affected() == 0 {
+                return Err(AppError::NotFound("task"));
+            }
+            Ok(())
+        };
+        write.commit(value?).await
+    }
+}
+
+impl SqliteTaskRepository {
+    pub(crate) async fn list_in(conn: &mut sqlx::SqliteConnection) -> Result<Vec<Task>, AppError> {
+        Ok(sqlx::query_file_as!(Task, "sql/tasks/select_all.sql")
+            .fetch_all(&mut *conn)
+            .await?)
     }
 }

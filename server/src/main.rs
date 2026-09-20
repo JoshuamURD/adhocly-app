@@ -5,18 +5,18 @@ mod projects;
 mod reminders;
 mod routes;
 mod state;
+mod sync;
 mod tasks;
 
 use anyhow::{Context, Result};
 use std::env;
-use utoipa::OpenApi;
 
 const DEFAULT_BIND: &str = "127.0.0.1:3000";
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<()> {
     if env::args().any(|arg| arg == "--openapi") {
-        println!("{}", routes::ApiDoc::openapi().to_pretty_json()?);
+        println!("{}", routes::openapi().to_pretty_json()?);
         return Ok(());
     }
 

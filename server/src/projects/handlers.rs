@@ -6,8 +6,9 @@ use axum::{
 
 use crate::{error::AppError, state::AppState};
 
-use super::{
-    model::{ProjectFolderInput, INBOX_ID, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValueInput, Project, ProjectInput},
+use super::model::{
+    MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValueInput, Project,
+    ProjectFolderInput, ProjectInput, INBOX_ID,
 };
 
 // Shared with the folders module, which validates names the same way.
@@ -17,6 +18,13 @@ pub(crate) fn name_or_invalid(name: &str) -> Result<&str, AppError> {
         return Err(AppError::Invalid("name is required"));
     }
     Ok(name)
+}
+
+pub(crate) fn optional_id_or_invalid(id: Option<&str>) -> Result<Option<&str>, AppError> {
+    match id.map(str::trim) {
+        Some("") => Err(AppError::Invalid("id cannot be blank")),
+        id => Ok(id),
+    }
 }
 
 #[utoipa::path(
@@ -66,7 +74,11 @@ pub(crate) async fn create_project(
     Json(input): Json<ProjectInput>,
 ) -> std::result::Result<(StatusCode, Json<Project>), AppError> {
     let name = name_or_invalid(&input.name)?;
-    Ok((StatusCode::CREATED, Json(state.projects.create(name).await?)))
+    let id = optional_id_or_invalid(input.id.as_deref())?;
+    Ok((
+        StatusCode::CREATED,
+        Json(state.projects.create(id, name).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -136,7 +148,10 @@ pub(crate) async fn move_project(
         return Err(AppError::Invalid("Inbox cannot be filed"));
     }
     Ok(Json(
-        state.projects.set_folder(&id, input.folder_id.as_deref()).await?,
+        state
+            .projects
+            .set_folder(&id, input.folder_id.as_deref())
+            .await?,
     ))
 }
 
@@ -169,6 +184,7 @@ pub(crate) async fn create_metadata_field(
     Json(input): Json<MetadataFieldInput>,
 ) -> std::result::Result<(StatusCode, Json<MetadataField>), AppError> {
     name_or_invalid(&input.name)?;
+    optional_id_or_invalid(input.id.as_deref())?;
     Ok((
         StatusCode::CREATED,
         Json(state.projects.create_field(&input).await?),

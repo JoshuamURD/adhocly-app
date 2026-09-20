@@ -1,8 +1,8 @@
 [tools]
 bun = "1.4"
 rust = "stable"
-# `cargo sqlx migrate run` prepares the schema database that the query_file! macros check
-# against while compiling. Remove this tool and the macros stop being compile-checked.
+# The sqlx CLI migrates the schema database the committed query cache is generated from. Remove this
+# tool and `mise run db:schema` / `sqlx:prepare` / `sqlx:check` stop working.
 "cargo:sqlx-cli" = "0.9"
 
 [tasks."api:gen"]
@@ -10,25 +10,43 @@ description = "Regenerate OpenAPI and Orval client"
 run = "bun run api:gen"
 
 [tasks."db:schema"]
-description = "Rebuild the schema database sqlx checks queries against at compile time"
+description = "Rebuild the schema database the sqlx query cache is generated from"
 dir = "server"
 run = '''
 db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
 mkdir -p "$(dirname "$db")"
 rm -f "$db"
 DATABASE_URL="sqlite://$db?mode=rwc" cargo sqlx migrate run
-# cargo cannot see that the schema changed, so force the query check to re-run.
+# cargo cannot see that the schema changed, and `cargo sqlx prepare` only collects the queries it
+# actually re-expands, so force the next compile to re-run them.
 touch src/main.rs
+'''
+
+[tasks."sqlx:prepare"]
+description = "Regenerate the committed offline query cache after changing SQL"
+dir = "server"
+depends = ["db:schema"]
+run = '''
+db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
+rm -rf .sqlx
+# The cache is generated from a live database, so override the offline default from .cargo/config.toml.
+SQLX_OFFLINE=false DATABASE_URL="sqlite://$db" cargo sqlx prepare
+'''
+
+[tasks."sqlx:check"]
+description = "Verify the committed query cache still matches the migrations"
+dir = "server"
+depends = ["db:schema"]
+run = '''
+db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
+SQLX_OFFLINE=false DATABASE_URL="sqlite://$db" cargo sqlx prepare --check
 '''
 
 [tasks.test]
 description = "Run the server test suite"
 dir = "server"
-depends = ["db:schema"]
-run = '''
-db="${XDG_STATE_HOME:-$HOME/.local/state}/adhocly/schema.db"
-DATABASE_URL="sqlite://$db" cargo test
-'''
+depends = ["sqlx:check"]
+run = "cargo test"
 
 [tasks."api:serve"]
 description = "Run the SQLite API"

@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    sync::{SyncOperation, Write},
+};
 
 use super::model::Folder;
 
@@ -10,23 +13,37 @@ use super::model::Folder;
 pub(crate) trait FolderRepository: Send + Sync {
     async fn list(&self) -> Result<Vec<Folder>, AppError>;
     /// The parent, when given, must exist.
-    async fn create(&self, name: &str, parent_id: Option<&str>) -> Result<Folder, AppError>;
+    async fn create(
+        &self,
+        id: Option<&str>,
+        name: &str,
+        parent_id: Option<&str>,
+    ) -> Result<Folder, AppError>;
     /// Renames and moves in one update. A folder may not move inside its own subtree.
-    async fn update(&self, id: &str, name: &str, parent_id: Option<&str>) -> Result<Folder, AppError>;
+    async fn update(
+        &self,
+        id: &str,
+        name: &str,
+        parent_id: Option<&str>,
+    ) -> Result<Folder, AppError>;
     /// Deletes the folder after handing its projects and subfolders to its parent.
     async fn delete(&self, id: &str) -> Result<(), AppError>;
 }
 
 pub(crate) struct SqliteFolderRepository {
     db: SqlitePool,
+    sync: Option<SyncOperation>,
 }
 
 impl SqliteFolderRepository {
-    pub(crate) fn new(db: SqlitePool) -> Self {
-        Self { db }
+    pub(crate) fn new(db: SqlitePool, sync: Option<SyncOperation>) -> Self {
+        Self { db, sync }
     }
 
-    async fn folder_or_404(&self, id: &str) -> Result<Folder, AppError> {
+    async fn folder_or_404(
+        conn: &mut sqlx::SqliteConnection,
+        id: &str,
+    ) -> Result<Folder, AppError> {
         // Every write reads its row back through here: SQLite echoes a NULL bind in a
         // `RETURNING` clause as an empty string, which would report `parentId: ""`.
         sqlx::query_as!(
@@ -34,21 +51,24 @@ impl SqliteFolderRepository {
             "SELECT id, name, parent_id, created_at, updated_at FROM folders WHERE id = ?",
             id
         )
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or(AppError::NotFound("folder"))
     }
 
-    async fn parent_or_404(&self, parent_id: Option<&str>) -> Result<(), AppError> {
+    async fn parent_or_404(
+        conn: &mut sqlx::SqliteConnection,
+        parent_id: Option<&str>,
+    ) -> Result<(), AppError> {
         match parent_id {
-            Some(parent_id) => self.folder_or_404(parent_id).await.map(|_| ()),
+            Some(parent_id) => Self::folder_or_404(&mut *conn, parent_id).await.map(|_| ()),
             None => Ok(()),
         }
     }
 
     /// Walks up from the new parent; reaching `id` means the move would close a loop.
     async fn check_not_inside_itself(
-        &self,
+        conn: &mut sqlx::SqliteConnection,
         id: &str,
         parent_id: Option<&str>,
     ) -> Result<(), AppError> {
@@ -67,7 +87,7 @@ impl SqliteFolderRepository {
         )
         .bind(parent_id)
         .bind(id)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
         if looped == 1 {
@@ -80,28 +100,37 @@ impl SqliteFolderRepository {
 #[async_trait]
 impl FolderRepository for SqliteFolderRepository {
     async fn list(&self) -> Result<Vec<Folder>, AppError> {
-        Ok(sqlx::query_as!(
-            Folder,
-            "SELECT id, name, parent_id, created_at, updated_at FROM folders
-             ORDER BY name COLLATE NOCASE"
-        )
-        .fetch_all(&self.db)
-        .await?)
+        Self::list_in(&mut *self.db.acquire().await?).await
     }
 
-    async fn create(&self, name: &str, parent_id: Option<&str>) -> Result<Folder, AppError> {
-        self.parent_or_404(parent_id).await?;
-        let id = uuid::Uuid::now_v7().to_string();
-        sqlx::query!(
+    async fn create(
+        &self,
+        id: Option<&str>,
+        name: &str,
+        parent_id: Option<&str>,
+    ) -> Result<Folder, AppError> {
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
+        }
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            Self::parent_or_404(&mut *conn, parent_id).await?;
+            let id = id
+                .map(str::to_owned)
+                .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+            sqlx::query!(
             "INSERT INTO folders (id, name, parent_id, created_at, updated_at)
              VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             id,
             name,
             parent_id
         )
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
-        self.folder_or_404(&id).await
+            Self::folder_or_404(&mut *conn, &id).await
+        };
+        write.commit(value?).await
     }
 
     async fn update(
@@ -110,44 +139,72 @@ impl FolderRepository for SqliteFolderRepository {
         name: &str,
         parent_id: Option<&str>,
     ) -> Result<Folder, AppError> {
-        self.folder_or_404(id).await?;
-        self.parent_or_404(parent_id).await?;
-        self.check_not_inside_itself(id, parent_id).await?;
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
+        }
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            Self::folder_or_404(&mut *conn, id).await?;
+            Self::parent_or_404(&mut *conn, parent_id).await?;
+            Self::check_not_inside_itself(&mut *conn, id, parent_id).await?;
 
-        sqlx::query!(
-            "UPDATE folders
+            sqlx::query!(
+                "UPDATE folders
              SET name = ?, parent_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = ?",
-            name,
-            parent_id,
-            id
-        )
-        .execute(&self.db)
-        .await?;
-        self.folder_or_404(id).await
+                name,
+                parent_id,
+                id
+            )
+            .execute(&mut *conn)
+            .await?;
+            Self::folder_or_404(&mut *conn, id).await
+        };
+        write.commit(value?).await
     }
 
     async fn delete(&self, id: &str) -> Result<(), AppError> {
-        let parent_id = self.folder_or_404(id).await?.parent_id;
-        let mut transaction = self.db.begin().await?;
-        sqlx::query!(
-            "UPDATE folders SET parent_id = ? WHERE parent_id = ?",
-            parent_id,
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-        sqlx::query!(
-            "UPDATE projects SET folder_id = ? WHERE folder_id = ?",
-            parent_id,
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-        sqlx::query!("DELETE FROM folders WHERE id = ?", id)
-            .execute(&mut *transaction)
+        let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
+        if let Some(value) = write.replay()? {
+            return Ok(value);
+        }
+        let conn = &mut *write.transaction;
+        let value: Result<_, AppError> = {
+            let parent_id = Self::folder_or_404(&mut *conn, id).await?.parent_id;
+            sqlx::query!(
+                "UPDATE folders SET parent_id = ? WHERE parent_id = ?",
+                parent_id,
+                id
+            )
+            .execute(&mut *conn)
             .await?;
-        transaction.commit().await?;
-        Ok(())
+            sqlx::query!(
+                "UPDATE projects SET folder_id = ? WHERE folder_id = ?",
+                parent_id,
+                id
+            )
+            .execute(&mut *conn)
+            .await?;
+            sqlx::query!("DELETE FROM folders WHERE id = ?", id)
+                .execute(&mut *conn)
+                .await?;
+            Ok(())
+        };
+        write.commit(value?).await
+    }
+}
+
+impl SqliteFolderRepository {
+    pub(crate) async fn list_in(
+        conn: &mut sqlx::SqliteConnection,
+    ) -> Result<Vec<Folder>, AppError> {
+        Ok(sqlx::query_as!(
+            Folder,
+            "SELECT id, name, parent_id, created_at, updated_at FROM folders
+             ORDER BY name COLLATE NOCASE"
+        )
+        .fetch_all(&mut *conn)
+        .await?)
     }
 }

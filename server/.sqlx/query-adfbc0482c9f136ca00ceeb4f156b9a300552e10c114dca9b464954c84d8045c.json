@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "-- kind is immutable after creation; only name and options change.\nUPDATE metadata_fields\nSET name = ?, options = ?\nWHERE id = ?\nRETURNING id, name, kind, options, created_at\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_fields",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_fields",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "kind",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_fields",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "options",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_fields",
+            "name": "options"
+          }
+        }
+      },
+      {
+        "name": "created_at",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_fields",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "adfbc0482c9f136ca00ceeb4f156b9a300552e10c114dca9b464954c84d8045c"
+}

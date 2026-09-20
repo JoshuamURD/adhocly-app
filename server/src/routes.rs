@@ -1,7 +1,15 @@
-use axum::{http::StatusCode, routing::get, Json, Router};
+use axum::{
+    extract::{Request, State},
+    http::{header::AUTHORIZATION, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::get,
+    Json, Router,
+};
 use sqlx::SqlitePool;
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     error::AppError,
@@ -12,6 +20,7 @@ use crate::{
     },
     reminders::{self, Reminder},
     state::AppState,
+    sync::{self, SyncOperation, SyncReply, SyncSnapshot},
     tasks::{self, Task, TaskInput, ToggleInput, ToggleResult},
 };
 
@@ -20,32 +29,10 @@ use crate::{
     // Without this the API client built into the docs (Scalar) resolves relative paths against the
     // docs' own origin and every "Send request" 404s. The generated openapi.json carries it too.
     servers((url = "http://localhost:3000", description = "Local adhocly API")),
-    paths(
-        health,
-        tasks::list_tasks,
-        tasks::get_task,
-        tasks::create_task,
-        tasks::update_task,
-        tasks::toggle_task,
-        tasks::delete_task,
-        projects::list_projects,
-        projects::get_project,
-        projects::create_project,
-        projects::update_project,
-        projects::delete_project,
-        projects::list_metadata_fields,
-        projects::create_metadata_field,
-        projects::update_metadata_field,
-        projects::delete_metadata_field,
-        projects::set_project_metadata,
-        projects::move_project,
-        folders::list_folders,
-        folders::create_folder,
-        folders::update_folder,
-        folders::delete_folder,
-        reminders::get_reminder
-    ),
     components(schemas(
+        SyncOperation,
+        SyncSnapshot,
+        SyncReply,
         Task,
         TaskInput,
         ToggleInput,
@@ -72,66 +59,90 @@ use crate::{
 )]
 pub(crate) struct ApiDoc;
 
+/// The whole API is declared here: `routes!` reads the `#[utoipa::path]` attribute of each handler,
+/// so the mount path lives in exactly one place instead of also being repeated in `app`.
+fn api_router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .routes(routes!(health))
+        .routes(routes!(sync::get_snapshot, sync::apply))
+        .routes(routes!(tasks::list_tasks, tasks::create_task))
+        .routes(routes!(
+            tasks::get_task,
+            tasks::update_task,
+            tasks::delete_task
+        ))
+        .routes(routes!(tasks::toggle_task))
+        .routes(routes!(projects::list_projects, projects::create_project))
+        .routes(routes!(
+            projects::get_project,
+            projects::update_project,
+            projects::delete_project
+        ))
+        .routes(routes!(projects::set_project_metadata))
+        .routes(routes!(projects::move_project))
+        .routes(routes!(folders::list_folders, folders::create_folder))
+        .routes(routes!(folders::update_folder, folders::delete_folder))
+        .routes(routes!(
+            projects::list_metadata_fields,
+            projects::create_metadata_field
+        ))
+        .routes(routes!(
+            projects::update_metadata_field,
+            projects::delete_metadata_field
+        ))
+        .routes(routes!(reminders::get_reminder))
+}
+
+pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
+    api_router().split_for_parts().1
+}
+
 pub(crate) fn app(db: SqlitePool) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/openapi.json", get(openapi))
+    // Set API_TOKEN to require `Authorization: Bearer <token>` on every /api route. Without it the
+    // middleware passes requests through, so local development and the docs page stay open.
+    let token = std::env::var("API_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty());
+    let (router, api) = api_router().split_for_parts();
+    router
+        // Registered before the layers so the docs page can fetch it cross-origin.
         .route(
-            "/api/tasks",
-            get(tasks::list_tasks).post(tasks::create_task),
+            "/openapi.json",
+            get(move || {
+                let api = api.clone();
+                async move { Json(api) }
+            }),
         )
-        .route(
-            "/api/tasks/{id}",
-            get(tasks::get_task)
-                .put(tasks::update_task)
-                .delete(tasks::delete_task),
-        )
-        .route(
-            "/api/tasks/{id}/toggle",
-            axum::routing::post(tasks::toggle_task),
-        )
-        .route(
-            "/api/projects",
-            get(projects::list_projects).post(projects::create_project),
-        )
-        .route(
-            "/api/projects/{id}",
-            get(projects::get_project)
-                .put(projects::update_project)
-                .delete(projects::delete_project),
-        )
-        .route(
-            "/api/projects/{id}/metadata/{fieldId}",
-            axum::routing::put(projects::set_project_metadata),
-        )
-        .route(
-            "/api/projects/{id}/folder",
-            axum::routing::put(projects::move_project),
-        )
-        .route(
-            "/api/folders",
-            get(folders::list_folders).post(folders::create_folder),
-        )
-        .route(
-            "/api/folders/{id}",
-            axum::routing::put(folders::update_folder).delete(folders::delete_folder),
-        )
-        .route(
-            "/api/metadata-fields",
-            get(projects::list_metadata_fields).post(projects::create_metadata_field),
-        )
-        .route(
-            "/api/metadata-fields/{id}",
-            axum::routing::put(projects::update_metadata_field)
-                .delete(projects::delete_metadata_field),
-        )
-        .route("/api/reminders/{id}", get(reminders::get_reminder))
+        // The iOS app reaches a cross-origin PUBLIC_API_URL and a bearer token forces a preflight,
+        // so CORS stays permissive: the token, not the origin, is what closes the hole.
+        .layer(middleware::from_fn_with_state(token, require_token))
         .layer(CorsLayer::permissive())
         .with_state(AppState::new(db))
 }
 
-async fn openapi() -> Json<utoipa::openapi::OpenApi> {
-    Json(ApiDoc::openapi())
+/// Shared-secret check for `/api/*`. `/health` and `/openapi.json` stay reachable so health probes and
+/// the Scalar docs page keep working.
+async fn require_token(
+    State(token): State<Option<String>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(token) = token else {
+        return next.run(request).await;
+    };
+    if !request.uri().path().starts_with("/api/") {
+        return next.run(request).await;
+    }
+    let provided = request
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    if provided.is_some_and(|value| value == token) {
+        next.run(request).await
+    } else {
+        (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
+    }
 }
 
 #[utoipa::path(

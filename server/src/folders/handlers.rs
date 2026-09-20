@@ -4,7 +4,11 @@ use axum::{
     Json,
 };
 
-use crate::{error::AppError, projects::name_or_invalid, state::AppState};
+use crate::{
+    error::AppError,
+    projects::{name_or_invalid, optional_id_or_invalid},
+    state::AppState,
+};
 
 use super::model::{Folder, FolderInput};
 
@@ -38,7 +42,11 @@ pub(crate) async fn create_folder(
     Json(input): Json<FolderInput>,
 ) -> std::result::Result<(StatusCode, Json<Folder>), AppError> {
     let name = name_or_invalid(&input.name)?;
-    let folder = state.folders.create(name, input.parent_id.as_deref()).await?;
+    let id = optional_id_or_invalid(input.id.as_deref())?;
+    let folder = state
+        .folders
+        .create(id, name, input.parent_id.as_deref())
+        .await?;
     Ok((StatusCode::CREATED, Json(folder)))
 }
 

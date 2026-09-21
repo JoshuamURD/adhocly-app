@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, FromRow)]
@@ -22,9 +21,6 @@ pub(crate) struct Task {
     pub(crate) completed: bool,
     #[serde(default = "default_status")]
     pub(crate) status_id: String,
-    #[serde(default)]
-    #[schema(value_type = BTreeMap<String, String>)]
-    pub(crate) properties: sqlx::types::Json<BTreeMap<String, String>>,
     #[serde(default)]
     #[schema(value_type = Vec<CustomReminder>)]
     pub(crate) reminders: sqlx::types::Json<Vec<CustomReminder>>,
@@ -84,8 +80,6 @@ pub(crate) struct TaskInput {
     pub(crate) completed: bool,
     /// Omission preserves an existing non-complete status on updates from older clients.
     pub(crate) status_id: Option<String>,
-    /// Omission preserves existing properties. An empty map explicitly clears them.
-    pub(crate) properties: Option<BTreeMap<String, String>>,
     /// Omission preserves reminders; an empty list removes all custom reminders.
     pub(crate) reminders: Option<Vec<CustomReminder>>,
 }

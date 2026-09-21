@@ -241,96 +241,6 @@ async fn cascade_versions_and_create_validation_cannot_be_bypassed() {
     assert!(deleted.changes["projects/p1"] > before.versions["projects/p1"]);
     assert!(deleted.changes["folders/f2"] > before.versions["folders/f2"]);
 
-    let field: projects::MetadataFieldInput =
-        serde_json::from_value(json!({"id":"field", "name":"Status", "kind":"text"})).unwrap();
-    state.projects.create_field(&field).await.unwrap();
-    // A metadata value is revised on its own, so a rename queued against the project row stays valid.
-    let before = snapshot(state.pool()).await.unwrap();
-    state
-        .projects
-        .set_value("p1", "field", Some("Active".into()))
-        .await
-        .unwrap();
-    let after = snapshot(state.pool()).await.unwrap();
-    assert_eq!(after.versions["projects/p1/metadata/field"], 1);
-    assert_eq!(
-        after.versions["projects/p1"],
-        before.versions["projects/p1"]
-    );
-    let changed_kind =
-        serde_json::from_value(json!({"id":"field", "name":"Status", "kind":"number"})).unwrap();
-    assert!(state.projects.create_field(&changed_kind).await.is_err());
-    assert_eq!(
-        state.projects.list_fields().await.unwrap()[0].kind,
-        projects::FieldKind::Text
-    );
-    state.projects.delete_field("field").await.unwrap();
-    let after = snapshot(state.pool()).await.unwrap();
-    // The cascade bumps the value's own revision, not the project's.
-    assert_eq!(after.versions["projects/p1/metadata/field"], 2);
-    assert_eq!(
-        after.versions["projects/p1"],
-        before.versions["projects/p1"]
-    );
-}
-
-#[tokio::test]
-async fn metadata_value_operations_revision_only_the_value() {
-    let state = state().await;
-    state.projects.create(Some("p1"), "Project").await.unwrap();
-    let field: projects::MetadataFieldInput =
-        serde_json::from_value(json!({"id":"field", "name":"Status", "kind":"text"})).unwrap();
-    state.projects.create_field(&field).await.unwrap();
-    let before = snapshot(state.pool()).await.unwrap();
-    let value_key = "projects/p1/metadata/field";
-
-    let first = send(
-        &state,
-        operation(
-            "value-1",
-            "/api/projects/p1/metadata/field",
-            "PUT",
-            json!({"value": "Active"}),
-            before.versions.get(value_key).copied().unwrap_or(0),
-        ),
-    )
-    .await
-    .unwrap();
-    assert_eq!(first.changes[value_key], 1);
-    assert!(!first.changes.contains_key("projects/p1"));
-
-    // The rename still writes against the project row's own revision, which the value did not touch.
-    let renamed = send(
-        &state,
-        operation(
-            "rename-1",
-            "/api/projects/p1",
-            "PUT",
-            json!({"name": "Renamed"}),
-            before.versions["projects/p1"],
-        ),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        renamed.changes["projects/p1"],
-        before.versions["projects/p1"] + 1
-    );
-    assert!(!renamed.changes.contains_key(value_key));
-    assert!(matches!(
-        send(
-            &state,
-            operation(
-                "value-2",
-                "/api/projects/p1/metadata/field",
-                "PUT",
-                json!({"value": "Stale"}),
-                before.versions.get(value_key).copied().unwrap_or(0)
-            )
-        )
-        .await,
-        Err(AppError::Conflict(_))
-    ));
 }
 
 #[tokio::test]
@@ -409,31 +319,12 @@ async fn kanban_schema_and_task_moves_share_the_sync_protocol() {
     let first = send(&state, change_status.clone()).await.unwrap();
     assert_eq!(first.changes["task-fields/status"], 2);
     send(&state, change_status).await.unwrap();
-    let field = json!({"id":"priority", "name":"Priority", "kind":"choice", "options":[{"id":"high","name":"High"},{"id":"low","name":"Low"}]});
-    send(
-        &state,
-        operation("field", "/api/task-fields", "POST", field.clone(), 0),
-    )
-    .await
-    .unwrap();
-    let board = json!({"id":"priority", "name":"Priorities", "fieldId":"priority"});
-    let reply = send(
-        &state,
-        operation("board", "/api/boards", "POST", board.clone(), 0),
-    )
-    .await
-    .unwrap();
-    assert_eq!(reply.changes["boards/priority"], 1);
-    assert!(reply
-        .snapshot
-        .unwrap()
-        .boards
-        .iter()
-        .any(|b| b.field_id == "priority"));
+    let board = json!({"id":"workflow", "name":"Workflow", "fieldId":"status"});
+    let reply = send(&state, operation("board", "/api/boards", "POST", board, 0)).await.unwrap();
+    assert_eq!(reply.changes["boards/workflow"], 1);
 
     let mut input = task("kanban-task");
     input["statusId"] = json!("review");
-    input["properties"] = json!({"priority":"high"});
     send(
         &state,
         operation("create-card", "/api/tasks", "POST", input.clone(), 0),
@@ -451,7 +342,6 @@ async fn kanban_schema_and_task_moves_share_the_sync_protocol() {
     .unwrap();
     let persisted = state.tasks.get("kanban-task").await.unwrap();
     assert_eq!(persisted.status_id, "review");
-    assert_eq!(persisted.properties["priority"], "high");
 
     // Moving to Complete uses PUT, and must have exactly the same recurrence behavior as a toggle.
     input["statusId"] = json!("complete");
@@ -462,58 +352,19 @@ async fn kanban_schema_and_task_moves_share_the_sync_protocol() {
     let successor = state.tasks.get("next:kanban-task").await.unwrap();
     assert!(!successor.completed);
     assert_eq!(successor.status_id, "todo");
-    assert_eq!(successor.properties["priority"], "high");
     assert_eq!(state.tasks.list().await.unwrap().len(), 2);
 
-    let mut renamed = field.clone();
-    renamed["options"][0]["name"] = json!("Urgent");
+    let mut renamed = status.clone();
+    renamed["options"][0]["name"] = json!("Ready");
     let before = snapshot(state.pool()).await.unwrap();
-    send(
-        &state,
-        operation(
-            "rename-option",
-            "/api/task-fields/priority",
-            "PUT",
-            renamed,
-            1,
-        ),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        snapshot(state.pool()).await.unwrap().versions["tasks/kanban-task"],
-        before.versions["tasks/kanban-task"]
-    );
-    assert!(matches!(
-        send(
-            &state,
-            operation(
-                "stale-field",
-                "/api/task-fields/priority",
-                "PUT",
-                field.clone(),
-                1
-            )
-        )
-        .await,
-        Err(AppError::Conflict(_))
-    ));
-    let mut removing_used = field;
-    removing_used["options"].as_array_mut().unwrap().remove(0);
-    assert!(matches!(
-        send(
-            &state,
-            operation(
-                "used-option",
-                "/api/task-fields/priority",
-                "PUT",
-                removing_used,
-                2
-            )
-        )
-        .await,
-        Err(AppError::Invalid(_))
-    ));
+    send(&state, operation("rename-status", "/api/task-fields/status", "PUT", renamed.clone(), 2)).await.unwrap();
+    assert_eq!(snapshot(state.pool()).await.unwrap().versions["tasks/kanban-task"], before.versions["tasks/kanban-task"]);
+    assert!(matches!(send(&state, operation("stale-status", "/api/task-fields/status", "PUT", status.clone(), 2)).await, Err(AppError::Conflict(_))));
+    let mut active = task("active-review");
+    active["statusId"] = json!("review");
+    send(&state, operation("review-task", "/api/tasks", "POST", active, 0)).await.unwrap();
+    renamed["options"].as_array_mut().unwrap().retain(|o| o["id"] != "review");
+    assert!(matches!(send(&state, operation("used-status", "/api/task-fields/status", "PUT", renamed, 3)).await, Err(AppError::Invalid(_))));
     status["options"].as_array_mut().unwrap().remove(2);
     assert!(matches!(
         send(
@@ -533,7 +384,7 @@ async fn kanban_schema_and_task_moves_share_the_sync_protocol() {
         &state,
         operation(
             "delete-board",
-            "/api/boards/priority",
+            "/api/boards/workflow",
             "DELETE",
             json!({}),
             1,
@@ -541,11 +392,11 @@ async fn kanban_schema_and_task_moves_share_the_sync_protocol() {
     )
     .await
     .unwrap();
-    assert_eq!(state.tasks.list().await.unwrap().len(), 2); // deleting a view keeps its tasks
+    assert_eq!(state.tasks.list().await.unwrap().len(), 3); // deleting a view keeps its tasks
 }
 
 #[tokio::test]
-async fn task_status_and_property_validation_cannot_be_bypassed() {
+async fn task_status_validation_and_retired_properties_cannot_be_bypassed() {
     let state = state().await;
     let mut input = task("bad");
     input["statusId"] = json!("complete"); // disagrees with completed: false
@@ -563,36 +414,21 @@ async fn task_status_and_property_validation_cannot_be_bypassed() {
     .await
     .is_err());
     input["statusId"] = json!("todo");
-    input["properties"] = json!({"unknown":"value"});
-    assert!(send(
-        &state,
-        operation("bad-property", "/api/tasks", "POST", input.clone(), 0)
-    )
-    .await
-    .is_err());
-    send(
-        &state,
-        operation(
-            "number-field",
-            "/api/task-fields",
-            "POST",
-            json!({"id":"effort","name":"Effort","kind":"number","options":[]}),
-            0,
-        ),
-    )
-    .await
-    .unwrap();
-    input["properties"] = json!({"effort":"NaN"});
-    assert!(send(
-        &state,
-        operation("bad-number", "/api/tasks", "POST", input.clone(), 0)
-    )
-    .await
-    .is_err());
-    input["properties"] = json!({"effort":"2.5"});
-    send(&state, operation("good", "/api/tasks", "POST", input, 0))
-        .await
-        .unwrap();
+    // Old queued task edits still save their task data, but cannot restore removed properties.
+    input["properties"] = json!({"retired":"value"});
+    let legacy = operation("legacy-properties", "/api/tasks", "POST", input, 0);
+    send(&state, legacy.clone()).await.unwrap();
+    send(&state, legacy).await.unwrap();
+    let saved = serde_json::to_value(state.tasks.get("bad").await.unwrap()).unwrap();
+    assert!(saved.get("properties").is_none());
+    for (url, method, body) in [
+        ("/api/task-fields", "POST", json!({"id":"effort","name":"Effort","kind":"number","options":[]})),
+        ("/api/task-fields/effort", "PUT", json!({"id":"effort","name":"Effort","kind":"number","options":[]})),
+        ("/api/metadata-fields", "POST", json!({"id":"client","name":"Client","kind":"text"})),
+        ("/api/projects/inbox/metadata/client", "PUT", json!({"value":"Acme"})),
+    ] {
+        assert!(send(&state, operation(url, url, method, body, 0)).await.is_err());
+    }
     assert!(
         sqlx::query("UPDATE tasks SET completed = 1 WHERE id = 'bad'")
             .execute(state.pool())
@@ -639,7 +475,6 @@ async fn kanban_migration_preserves_old_completed_tasks_and_reminders() {
     let task = state.tasks.get("old").await.unwrap();
     assert!(task.completed);
     assert_eq!(task.status_id, "complete");
-    assert!(task.properties.is_empty());
     assert!(task.reminders.is_empty());
     assert!(state.reminders.get("old-reminder").await.is_ok());
 }
@@ -648,7 +483,7 @@ async fn kanban_migration_preserves_old_completed_tasks_and_reminders() {
 async fn board_sorting_round_trips_replays_and_preserves_legacy_edits() {
     let state = state().await;
     let initial = snapshot(state.pool()).await.unwrap();
-    assert_eq!(initial.protocol_version, 6);
+    assert_eq!(initial.protocol_version, 7);
     assert_eq!(initial.boards[0].sort_mode, "created");
     assert!(initial.boards[0].manual_order.is_empty());
     let mut version = 1;
@@ -905,4 +740,51 @@ async fn contexts_validate_replay_preserve_overrides_and_cascade_atomically() {
     )
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn removing_direct_properties_preserves_statuses_contexts_and_legacy_replays() {
+    let db = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+    for migration in sqlx::migrate!().iter().filter(|m| m.version < 13) {
+        sqlx::raw_sql(migration.sql.clone()).execute(&db).await.unwrap();
+    }
+    sqlx::raw_sql(r#"
+        INSERT INTO metadata_fields (id, name, kind, created_at) VALUES ('client', 'Client', 'text', '2026-01-01');
+        INSERT INTO project_metadata VALUES ('inbox', 'client', 'Acme');
+        INSERT INTO task_fields VALUES ('priority', 'Priority', 'text', '[]');
+        INSERT INTO boards (id, name, field_id) VALUES ('priority', 'Priorities', 'priority');
+        INSERT INTO tasks (id, title, project_id, created_at, updated_at, status_id, properties)
+            VALUES ('old', 'Keep task', 'inbox', '2026-01-01', '2026-01-01', 'doing', '{"priority":"High"}');
+        UPDATE task_fields SET options = '[{"id":"todo","name":"Ready"},{"id":"doing","name":"Working"},{"id":"complete","name":"Shipped"}]' WHERE id = 'status';
+        INSERT INTO contexts VALUES ('client', '{"id":"client","name":"Client","fields":[{"id":"name","name":"Name","kind":"text","value":"Acme"}]}');
+        INSERT INTO context_links (id, data, task_id) VALUES ('tasks:old', '{"id":"tasks:old","contextIds":["client"],"overrides":{}}', 'old');
+    "#).execute(&db).await.unwrap();
+    let state = AppState::new(db.clone());
+    let mut legacy = task("old");
+    legacy["properties"] = json!({"priority":"High"});
+    let op = operation("old-create", "/api/tasks", "POST", legacy, 0);
+    let mut result = serde_json::to_value(state.tasks.get("old").await.unwrap()).unwrap();
+    result["properties"] = json!({"priority":"High"});
+    sqlx::query("INSERT INTO sync_receipts (id, request, result, changes) VALUES (?, ?, ?, ?)")
+        .bind(&op.id).bind(serde_json::to_string(&op).unwrap()).bind(result.to_string())
+        .bind(r#"{"tasks/old":1}"#).execute(&db).await.unwrap();
+    for migration in sqlx::migrate!().iter().filter(|m| m.version >= 13) {
+        sqlx::raw_sql(migration.sql.clone()).execute(&db).await.unwrap();
+    }
+    let snapshot = send(&state, op).await.unwrap().snapshot.unwrap();
+    assert_eq!(snapshot.tasks.len(), 1);
+    assert_eq!(snapshot.tasks[0].status_id, "doing");
+    assert_eq!(snapshot.tasks[0].title, "Keep task");
+    assert_eq!(snapshot.task_fields.len(), 1);
+    assert_eq!(snapshot.task_fields[0].options[2].name, "Shipped");
+    assert_eq!(snapshot.boards.len(), 1);
+    assert_eq!(snapshot.boards[0].field_id, "status");
+    assert_eq!(snapshot.contexts[0].fields[0].value, "Acme");
+    assert_eq!(snapshot.context_links[0].context_ids, vec!["client"]);
+    assert_eq!(snapshot.versions["boards/priority"], 2);
+    assert_eq!(snapshot.versions["task-fields/priority"], 2);
+    assert!(sqlx::query("SELECT properties FROM tasks").execute(&db).await.is_err());
+    assert!(sqlx::query("SELECT * FROM project_metadata").execute(&db).await.is_err());
+    assert!(sqlx::query("SELECT * FROM metadata_fields").execute(&db).await.is_err());
+    assert!(sqlx::query("INSERT INTO task_fields VALUES ('new', 'New', 'text', '[]')").execute(&db).await.is_err());
 }

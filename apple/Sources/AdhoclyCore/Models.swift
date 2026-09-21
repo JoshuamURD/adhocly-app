@@ -14,7 +14,6 @@ public struct TaskItem: Codable, Equatable, Identifiable, Sendable {
     public var updatedAt: String
     public var completed: Bool
     public var statusId: String
-    public var properties: [String: String]
     public var reminders: [CustomReminder]
 
     public init(title: String = "", projectId: String = "inbox", project: String = "Inbox") {
@@ -27,12 +26,11 @@ public struct TaskItem: Codable, Equatable, Identifiable, Sendable {
         updatedAt = createdAt
         completed = false
         statusId = "todo"
-        properties = [:]
         reminders = []
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, details, projectId, project, plannedFor, dueOn, repeatWeekday, createdAt, updatedAt, completed, statusId, properties, reminders
+        case id, title, details, projectId, project, plannedFor, dueOn, repeatWeekday, createdAt, updatedAt, completed, statusId, reminders
     }
 
     public init(from decoder: Decoder) throws {
@@ -49,7 +47,6 @@ public struct TaskItem: Codable, Equatable, Identifiable, Sendable {
         updatedAt = try c.decode(String.self, forKey: .updatedAt)
         completed = try c.decode(Bool.self, forKey: .completed)
         statusId = try c.decodeIfPresent(String.self, forKey: .statusId) ?? (completed ? "complete" : "todo")
-        properties = try c.decodeIfPresent([String: String].self, forKey: .properties) ?? [:]
         reminders = try c.decodeIfPresent([CustomReminder].self, forKey: .reminders) ?? []
     }
 }
@@ -74,7 +71,7 @@ public struct ProjectFolder: Codable, Equatable, Identifiable, Sendable {
 }
 
 struct Snapshot: Codable, Sendable {
-    var protocolVersion = 6
+    var protocolVersion = 7
     var contexts: [WorkContext] = []
     var contacts: [Contact] = []
     var contextLinks: [ContextLinks] = []
@@ -113,6 +110,8 @@ struct MutationBody: Codable, Equatable, Sendable {
     var repeatWeekday: Int?
     var completed: Bool?
     var statusId: String?
+    // Decode/encode old outbox bodies unchanged until acknowledged (lost-response replay).
+    // New task mutations never set this retired field.
     var properties: [String: String]?
     var reminders: [CustomReminder]?
     var name: String?
@@ -142,7 +141,6 @@ struct MutationBody: Codable, Equatable, Sendable {
         repeatWeekday = task.repeatWeekday
         completed = task.completed
         statusId = task.statusId
-        properties = task.properties
         reminders = task.reminders
     }
 }
@@ -186,7 +184,7 @@ public struct SyncIssue: Codable, Sendable {
 }
 
 struct SavedState: Codable, Sendable {
-    var formatVersion = 8
+    var formatVersion = 9
     var serverURL = ""
     var snapshot = Snapshot()
     var pending: [PendingMutation] = []

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE tasks SET\n    title = ?,\n    details = ?,\n    project_id = ?,\n    planned_for = ?,\n    due_on = ?,\n    repeat_weekday = ?,\n    completed = ?,\n    status_id = ?,\n    reminders = ?,\n    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\nWHERE id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "a06c122b6a80257cee3501006af5bb6707067329a3c2744616176e7e50dfc6d0"
+}

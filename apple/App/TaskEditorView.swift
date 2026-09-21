@@ -206,29 +206,6 @@ struct TaskEditorView: View {
                     Text("Save the task and its project before attaching or overriding contexts.").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if store.taskFields.contains(where: { $0.id != "status" }) {
-                Section("Properties") {
-                    ForEach(store.taskFields.filter { $0.id != "status" }) { field in
-                        if field.kind == .choice {
-                            Picker(field.name, selection: property(field.id)) {
-                                Text("Unassigned").tag("")
-                                ForEach(field.options) { option in Text(option.name).tag(option.id) }
-                            }
-                        } else {
-                            TextField(field.name, text: property(field.id))
-                        }
-                    }
-                }
-            }
-            let unknown = draft.properties.keys.filter { id in !store.taskFields.contains { $0.id == id } }.sorted()
-            if !unknown.isEmpty {
-                Section("Unavailable properties") {
-                    ForEach(unknown, id: \.self) { id in
-                        LabeledContent(id, value: draft.properties[id] ?? "")
-                        Button("Remove unavailable property", role: .destructive) { draft.properties[id] = nil }
-                    }
-                }
-            }
             Section {
                 OptionalDatePicker(title: "Planned", value: $draft.plannedFor)
                 OptionalDatePicker(title: "Due", value: $draft.dueOn)
@@ -292,10 +269,6 @@ struct TaskEditorView: View {
         }
         .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .keyboardShortcut(.defaultAction)
-    }
-
-    private func property(_ id: String) -> Binding<String> {
-        Binding(get: { draft.properties[id] ?? "" }, set: { draft.properties[id] = $0.isEmpty ? nil : $0 })
     }
 }
 

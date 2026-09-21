@@ -16,10 +16,7 @@ use crate::{
     error::AppError,
     folders::{self, Folder, FolderInput},
     kanban::{self, Board, FieldOption, TaskField},
-    projects::{
-        self, FieldKind, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValue,
-        MetadataValueInput, Project, ProjectFolderInput, ProjectInput,
-    },
+    projects::{self, Project, ProjectFolderInput, ProjectInput},
     reminders::{self, Reminder},
     state::AppState,
     sync::{self, SyncOperation, SyncReply, SyncSnapshot},
@@ -47,17 +44,11 @@ use crate::{
         ProjectFolderInput,
         Folder,
         FolderInput,
-        MetadataField,
-        MetadataFieldInput,
-        MetadataFieldUpdate,
-        MetadataValue,
-        MetadataValueInput,
-        FieldKind,
         Reminder
     )),
     tags(
         (name = "tasks", description = "Task persistence API"),
-        (name = "projects", description = "Projects and their user-defined metadata"),
+        (name = "projects", description = "Projects"),
         (name = "folders", description = "Folders that group projects"),
         (name = "reminders", description = "Task reminders")
     )
@@ -73,7 +64,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(routes!(contexts::save_contact, contexts::delete_contact))
         .routes(routes!(contexts::save_links))
         .routes(routes!(sync::get_snapshot, sync::apply))
-        .routes(routes!(kanban::list_fields, kanban::create_field))
+        .routes(routes!(kanban::list_fields))
         .routes(routes!(kanban::update_field))
         .routes(routes!(kanban::list_boards, kanban::create_board))
         .routes(routes!(kanban::update_board, kanban::delete_board))
@@ -90,18 +81,9 @@ fn api_router() -> OpenApiRouter<AppState> {
             projects::update_project,
             projects::delete_project
         ))
-        .routes(routes!(projects::set_project_metadata))
         .routes(routes!(projects::move_project))
         .routes(routes!(folders::list_folders, folders::create_folder))
         .routes(routes!(folders::update_folder, folders::delete_folder))
-        .routes(routes!(
-            projects::list_metadata_fields,
-            projects::create_metadata_field
-        ))
-        .routes(routes!(
-            projects::update_metadata_field,
-            projects::delete_metadata_field
-        ))
         .routes(routes!(reminders::get_reminder))
 }
 

@@ -89,7 +89,7 @@ struct ConnectionView: View {
             catch { self.error = error.localizedDescription }
         }
         .sheet(isPresented: $showStatusEditor) {
-            FieldEditorView(model: model, store: store, draft: store.statusField, original: store.statusField)
+            StatusEditorView(model: model, store: store, draft: store.statusField, original: store.statusField)
         }
         #if os(macOS)
         .frame(width: 540, height: 660)
@@ -163,10 +163,6 @@ struct SyncReviewView: View {
             Text(task.title).font(.headline)
             if !task.details.isEmpty { Text(task.details).textSelection(.enabled) }
             Text("\(task.project) · \(store.statusName(task.statusId))")
-            ForEach(task.properties.keys.sorted(), id: \.self) { id in
-                let field = store.taskFields.first { $0.id == id }
-                LabeledContent(field?.name ?? id, value: field?.options.first { $0.id == task.properties[id] }?.name ?? task.properties[id] ?? "")
-            }
             if let planned = task.plannedFor { Text("Planned: \(planned)") }
             if let due = task.dueOn { Text("Due: \(due)") }
             if let day = task.repeatWeekday, (0...6).contains(day) {

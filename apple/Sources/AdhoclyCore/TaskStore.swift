@@ -14,7 +14,23 @@ public final class TaskStore {
         self.session = session
         if FileManager.default.fileExists(atPath: fileURL.path) {
             state = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: fileURL))
-            guard [1, 2, 3, 4, 5, 6, 7, 8].contains(state.formatVersion) else { throw AppFailure("Unsupported local data version. Update the app before opening this data.") }
+            guard [1, 2, 3, 4, 5, 6, 7, 8, 9].contains(state.formatVersion) else { throw AppFailure("Unsupported local data version. Update the app before opening this data.") }
+            if state.formatVersion < 9 {
+                var next = state
+                let removedBoards = Set((next.snapshot.boards + next.pending.compactMap(\.localBoard))
+                    .filter { $0.fieldId != "status" }.map(\.id))
+                next.snapshot.taskFields.removeAll { $0.id != "status" }
+                next.snapshot.boards.removeAll { $0.fieldId != "status" }
+                let removedKeys = Set(next.pending.filter {
+                    ($0.entityKind == "task-fields" && $0.taskId != "status") ||
+                    ($0.entityKind == "boards" && removedBoards.contains($0.taskId))
+                }.map(\.key))
+                next.pending.removeAll { removedKeys.contains($0.key) }
+                if let issue = next.issue, removedKeys.contains(issue.key) { next.issue = nil }
+                // Keep surviving request IDs and bodies unchanged for receipt replay.
+                // TaskItem decoding has already discarded direct property values.
+                try commit(next)
+            }
         } else {
             state = SavedState()
         }
@@ -258,7 +274,7 @@ public final class TaskStore {
             fields.removeAll { $0.id == pending.taskId }
             if let field = pending.localField { fields.append(field) }
         }
-        return fields.sorted { $0.id == "status" ? $1.id != "status" : $1.id != "status" && $0.name < $1.name }
+        return fields.filter { $0.id == "status" }
     }
 
     public var boards: [KanbanBoard] {
@@ -267,7 +283,7 @@ public final class TaskStore {
             boards.removeAll { $0.id == pending.taskId }
             if let board = pending.localBoard { boards.append(board) }
         }
-        return boards.sorted { $0.name < $1.name }
+        return boards.filter { $0.fieldId == "status" }.sorted { $0.name < $1.name }
     }
 
     public var statusField: TaskField { taskFields.first { $0.id == "status" } ?? .status }
@@ -278,42 +294,20 @@ public final class TaskStore {
         state.snapshot.versions[key] ?? (["task-fields/status", "boards/status"].contains(key) ? 1 : 0)
     }
 
-    private func validateProperties(of task: TaskItem) throws {
-        guard statusField.options.contains(where: { $0.id == task.statusId }) else { throw AppFailure("Choose an available status.") }
-        for (id, value) in task.properties {
-            guard id != "status", let field = taskFields.first(where: { $0.id == id }) else {
-                throw AppFailure("An unknown task property must be removed before saving.")
-            }
-            if field.kind == .choice && !field.options.contains(where: { $0.id == value }) {
-                throw AppFailure("Choose an available option for \(field.name).")
-            }
-            if field.kind == .number && Double(value)?.isFinite != true {
-                throw AppFailure("\(field.name) must be a finite number.")
-            }
-        }
-    }
-
     public func move(_ taskId: String, to lane: KanbanLane, on board: KanbanBoard,
                      relativeTo targetId: String? = nil, after: Bool = false) throws {
         guard let original = tasks.first(where: { $0.id == taskId }),
-              boards.contains(board), let field = taskFields.first(where: { $0.id == board.fieldId }),
-              Kanban.lanes(field: field, tasks: tasks, completeName: completeName).contains(lane) else {
+              boards.contains(board), board.fieldId == "status",
+              Kanban.lanes(status: statusField).contains(lane) else {
             throw AppFailure("The task or board changed. Refresh it before moving this card.")
         }
         var task = original
-        if lane.isComplete {
-            task.statusId = "complete"
-        } else if board.fieldId == "status" {
-            task.statusId = lane.value!
-        } else {
-            task.properties[board.fieldId] = lane.value
-            if task.completed { task.statusId = "todo" }
-        }
+        task.statusId = lane.isComplete ? "complete" : lane.value!
         task.completed = task.statusId == "complete"
         var next = state
         if let targetId {
             guard board.sortMode == .manual,
-                  tasks.contains(where: { $0.id == targetId && Kanban.laneID(task: $0, fieldId: field.id) == lane.id }) else {
+                  tasks.contains(where: { $0.id == targetId && Kanban.laneID(task: $0) == lane.id }) else {
                 throw AppFailure("The drop target changed. Try moving the card again.")
             }
             if targetId == taskId { return }
@@ -410,38 +404,40 @@ public final class TaskStore {
         try commit(next)
     }
 
-    public func saveField(_ draft: TaskField, replacing original: TaskField? = nil) throws {
+    public func saveStatuses(_ draft: TaskField, replacing original: TaskField) throws {
+        guard draft.id == "status", draft.kind == .choice else { throw AppFailure("Custom properties belong to contexts, not tasks.") }
         var field = draft
         field.name = field.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        field.options = field.kind == .choice ? field.options.map { FieldOption(id: $0.id, name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines)) } : []
-        guard !field.name.isEmpty, !taskFields.contains(where: { $0.id != field.id && $0.name.lowercased() == field.name.lowercased() }) else {
-            throw AppFailure("Use a nonempty, unique property name.")
+        field.options = field.options.map { FieldOption(id: $0.id, name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        guard !field.name.isEmpty else {
+            throw AppFailure("Use a nonempty status heading.")
         }
-        guard field.kind != .choice || (!field.options.isEmpty && field.options.allSatisfy { !$0.name.isEmpty }),
+        guard !field.options.isEmpty && field.options.allSatisfy({ !$0.name.isEmpty }),
               Set(field.options.map(\.id)).count == field.options.count,
               Set(field.options.map { $0.name.lowercased() }).count == field.options.count else {
             throw AppFailure("Options need unique ids and nonempty, unique names.")
         }
-        if field.id == "status" && (field.kind != .choice || !["todo", "complete"].allSatisfy({ id in field.options.contains { $0.id == id } })) {
+        if !["todo", "complete"].allSatisfy({ id in field.options.contains { $0.id == id } }) {
             throw AppFailure("Keep the default and Complete statuses. You can rename them.")
         }
-        if let original {
-            guard original.id == field.id, taskFields.first(where: { $0.id == field.id }) == original,
-                  field.kind == original.kind else { throw AppFailure("This property changed. Reopen it before editing.") }
-        } else if taskFields.contains(where: { $0.id == field.id }) { throw AppFailure("Property already exists.") }
-        let used = tasks.compactMap { field.id == "status" ? $0.statusId : $0.properties[field.id] }
-        if field.kind == .choice && used.contains(where: { value in !field.options.contains { $0.id == value } }) {
-            throw AppFailure("Move tasks out of an option before removing it.")
+        guard original.id == field.id, statusField == original else { throw AppFailure("Statuses changed. Reopen them before editing.") }
+        if tasks.contains(where: { task in !field.options.contains { $0.id == task.statusId } }) {
+            throw AppFailure("Move tasks out of a status before removing it.")
         }
         var body = MutationBody()
         body.id = field.id; body.name = field.name; body.kind = field.kind; body.options = field.options
-        try enqueueConfiguration(kind: "task-fields", id: field.id, body: body, create: original == nil, field: field)
+        var next = state
+        next.pending.append(PendingMutation(taskId: "status",
+            operation: SyncOperation(url: "/api/task-fields/status", method: "PUT", body: body,
+                                     expectedVersion: version(for: "task-fields/status")),
+            entityKind: "task-fields", localField: field))
+        try commit(next)
     }
 
     public func saveBoard(_ draft: KanbanBoard, replacing original: KanbanBoard? = nil) throws {
         var board = draft
         board.name = board.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !board.name.isEmpty, taskFields.contains(where: { $0.id == board.fieldId }) else { throw AppFailure("Choose a board name and an available property.") }
+        guard !board.name.isEmpty, board.fieldId == "status" else { throw AppFailure("Choose a board name. Boards group tasks by status.") }
         if let original {
             guard original.id == board.id, boards.first(where: { $0.id == board.id }) == original else { throw AppFailure("This board changed. Reopen it before editing.") }
         } else if boards.contains(where: { $0.id == board.id }) { throw AppFailure("Board already exists.") }
@@ -472,13 +468,6 @@ public final class TaskStore {
         guard boards.contains(where: { $0.id == id }) else { throw AppFailure("Board no longer exists.") }
         var next = state
         next.pending.append(PendingMutation(taskId: id, operation: SyncOperation(url: "/api/boards/\(id)", method: "DELETE", body: MutationBody(), expectedVersion: version(for: "boards/\(id)")), entityKind: "boards"))
-        try commit(next)
-    }
-
-    private func enqueueConfiguration(kind: String, id: String, body: MutationBody, create: Bool, field: TaskField? = nil, board: KanbanBoard? = nil) throws {
-        var next = state
-        let path = "/api/\(kind)" + (create ? "" : "/\(id)")
-        next.pending.append(PendingMutation(taskId: id, operation: SyncOperation(url: path, method: create ? "POST" : "PUT", body: body, expectedVersion: version(for: "\(kind)/\(id)")), entityKind: kind, localField: field, localBoard: board))
         try commit(next)
     }
 
@@ -530,7 +519,7 @@ public final class TaskStore {
             }
             if issue.entityKind == "projects", replacement.operation.url.hasSuffix("/folder") {
                 guard exists else { throw AppFailure("This project was deleted on the server. Discard its local move before continuing.") }
-                // A move updates only folderId, not the project's name or metadata.
+                // A move updates only folderId, not the project's name.
             } else if ["contexts", "contacts", "context-links"].contains(issue.entityKind ?? "") {
                 // These use PUT upserts on a stable, independently revisioned URL.
             } else if replacement.operation.method != "DELETE" {
@@ -574,9 +563,8 @@ public final class TaskStore {
     private func taskMutation(_ draft: TaskItem, replacing original: TaskItem?, availableProjects: [Project]? = nil) throws -> PendingMutation {
         let projects = availableProjects ?? self.projects
         var task = draft
-        task.properties = task.properties.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         task.completed = task.statusId == "complete"
-        try validateProperties(of: task)
+        guard statusField.options.contains(where: { $0.id == task.statusId }) else { throw AppFailure("Choose an available status.") }
         try TaskReminders.validate(task.reminders)
         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.title.isEmpty else { throw AppFailure("A task needs a title.") }
@@ -647,7 +635,7 @@ public final class TaskStore {
     // leaves the old queue intact; a committed server mutation can safely replay after a crash.
     private func commit(_ newState: SavedState) throws {
         var next = newState
-        next.formatVersion = 8
+        next.formatVersion = 9
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(next)
@@ -667,8 +655,8 @@ public final class TaskStore {
         do {
             let api = SyncAPI(baseURL: try SyncAPI.validatedURL(state.serverURL), token: token, session: session)
             let initialSnapshot = try await api.snapshot()
-            guard initialSnapshot.protocolVersion >= 6 else {
-                throw AppFailure("Update the Rust server to the contexts version before syncing. Your local changes are safe; older servers cannot save contexts.")
+            guard initialSnapshot.protocolVersion >= 7 else {
+                throw AppFailure("Update the Rust server to the context-owned properties version before syncing. Your local changes are safe.")
             }
             var refreshed = state
             refreshed.snapshot = initialSnapshot

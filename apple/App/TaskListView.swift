@@ -35,7 +35,7 @@ struct TaskListView: View {
     @State private var editingTitle = false
     @State private var showConnection = false
     @State private var showReview = false
-    @State private var showProperties = false
+    @State private var showStatuses = false
     @State private var contextRequest: ContextRequest?
     @State private var showNewProject = false
     @State private var folderEditor: FolderRequest?
@@ -108,7 +108,7 @@ struct TaskListView: View {
         .sheet(item: $contextRequest) { request in
             ContextAttachmentsView(model: model, store: store, owner: request.id, title: request.title)
         }
-        .sheet(isPresented: $showProperties) { PropertiesView(model: model, store: store) }
+        .sheet(isPresented: $showStatuses) { StatusEditorView(model: model, store: store, draft: store.statusField, original: store.statusField) }
         .sheet(isPresented: $showNewProject) {
             ProjectEditorView { name in
                 try store.createProject(named: name)
@@ -332,7 +332,7 @@ struct TaskListView: View {
                 if isBoards {
                     ForEach(store.boards) { board in
                         NavigationLink(value: "board:\(board.id)") {
-                            directoryRow(board.name, subtitle: "Grouped by \(store.taskFields.first { $0.id == board.fieldId }?.name ?? "property")",
+                            directoryRow(board.name, subtitle: "Grouped by \(store.statusField.name)",
                                          symbol: "rectangle.split.3x1")
                         }
                         .contextMenu { boardActions(board) }
@@ -404,8 +404,8 @@ struct TaskListView: View {
                 if scope == "schedule" {
                     ScheduleView(model: model, store: store, tasks: visibleTasks,
                                  editTask: { editor = EditorRequest(draft: $0, original: $0) })
-                } else if let selectedBoard, let field = store.taskFields.first(where: { $0.id == selectedBoard.fieldId }) {
-                    KanbanView(model: model, store: store, board: selectedBoard, field: field, tasks: visibleTasks,
+                } else if let selectedBoard {
+                    KanbanView(model: model, store: store, board: selectedBoard, tasks: visibleTasks,
                                editTask: { editor = EditorRequest(draft: $0, original: $0) },
                                addTask: { editor = EditorRequest(draft: $0, original: nil) })
                 } else {
@@ -439,7 +439,7 @@ struct TaskListView: View {
                     newFolderButton
                     Button("New board", systemImage: "rectangle.split.3x1") { createBoard() }
                     Button("Contexts & contacts", systemImage: "square.stack.3d.up", action: openContextWorkspace)
-                    Button("Task properties", systemImage: "tag") { showProperties = true }
+                    Button("Task statuses", systemImage: "checklist") { showStatuses = true }
                     if let selectedBoard { boardActions(selectedBoard) }
                     if let project = store.projects.first(where: { "project:\($0.id)" == scope }) {
                         ProjectActions(model: model, store: store, project: project,
@@ -521,8 +521,8 @@ struct TaskListView: View {
             return "\(count) \(count == 1 ? "task" : "tasks") planned or due \(window.dateDescription)."
         }
         #if os(macOS)
-        if let board = board(for: scope) {
-            return "Grouped by \(store.taskFields.first { $0.id == board.fieldId }?.name ?? "property") · \(count) tasks"
+        if board(for: scope) != nil {
+            return "Grouped by \(store.statusField.name) · \(count) tasks"
         }
         if scope == "today" { return today.formatted(.dateTime.weekday(.wide).month(.wide).day()) }
         return "\(count) \(count == 1 ? "task" : "tasks")\(scope == "completed" ? " completed" : "")"

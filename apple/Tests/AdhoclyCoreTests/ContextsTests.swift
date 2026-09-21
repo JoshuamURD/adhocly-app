@@ -138,6 +138,47 @@ import XCTest
         XCTAssertEqual(reopened.contextTaskUsage(for: context.id).filter { $0.matches(.all) }.count, 3)
     }
 
+    func testPropertyFiltersUseEffectiveValuesAndCombineOnTheSameContext() throws {
+        let store = try TaskStore(fileURL: file())
+        let client = Contact(name: "Client"), namesake = Contact(name: "Client")
+        try store.saveContact(client); try store.saveContact(namesake)
+        var context = WorkContext(name: "Software")
+        var platform = ContextField(name: "Platform", kind: .choice)
+        platform.options = ["Cloudflare", "Local"]
+        platform.value = "Cloudflare"
+        var contact = ContextField(name: "Client", kind: .contact)
+        contact.value = client.id
+        context.fields = [platform, contact]
+        try store.saveContext(context)
+        let project = try store.createProject(named: "Website")
+        let task = TaskItem(title: "Deploy", projectId: project.id)
+        try store.save(task)
+        let owner = "projects:\(project.id)"
+        let original = store.contextLinks(for: owner)
+        var links = original
+        links.contextIds = [context.id]
+        links.overrides = [context.id: [platform.id: "Local"]]
+        try store.saveContextLinks(links, replacing: original)
+        let projectContext = try XCTUnwrap(store.resolvedContexts(for: owner).first)
+        XCTAssertTrue(projectContext.matches(propertyValues: [:]))
+        XCTAssertTrue(projectContext.matches(propertyValues: [platform.id: "Local", contact.id: client.id]))
+        XCTAssertFalse(projectContext.matches(propertyValues: [platform.id: "Cloudflare"]))
+        XCTAssertFalse(projectContext.matches(propertyValues: [platform.id: "Local", contact.id: namesake.id]))
+        XCTAssertFalse(projectContext.matches(propertyValues: ["deleted-field": ""]))
+        let inherited = try XCTUnwrap(store.contextTaskUsage(for: context.id).first?.resolved)
+        XCTAssertTrue(inherited.matches(propertyValues: [platform.id: "Local"]))
+        let taskOwner = "tasks:\(task.id)"
+        let taskOriginal = store.contextLinks(for: taskOwner)
+        var taskLinks = taskOriginal
+        taskLinks.overrides = [context.id: [platform.id: "", contact.id: namesake.id]]
+        try store.saveContextLinks(taskLinks, replacing: taskOriginal)
+        let overridden = try XCTUnwrap(store.contextTaskUsage(for: context.id).first?.resolved)
+        XCTAssertTrue(overridden.matches(propertyValues: [platform.id: "", contact.id: namesake.id]))
+        XCTAssertFalse(overridden.matches(propertyValues: [platform.id: "Local"]))
+        XCTAssertFalse(overridden.matches(propertyValues: [platform.id: "", contact.id: client.id]))
+        XCTAssertFalse(projectContext.matches(propertyValues: [platform.id: ""]))
+    }
+
     func testTypedValuesRejectInvalidInputsAndAllowExplicitClears() throws {
         let date = ContextField(name: "Date", kind: .date)
         for invalid in ["2026-02-29", "2026-04-31", "2026-1-01", "2026-01-01T00:00"] {

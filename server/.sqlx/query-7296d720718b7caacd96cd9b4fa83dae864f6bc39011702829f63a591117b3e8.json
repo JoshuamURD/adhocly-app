@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tasks (\n    id, title, details, project_id, planned_for, due_on, repeat_weekday, created_at, updated_at, completed, status_id, reminders\n) VALUES (\n    ?, ?, ?, ?, ?, ?, ?,\n    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),\n    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),\n    ?, ?, ?\n)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "7296d720718b7caacd96cd9b4fa83dae864f6bc39011702829f63a591117b3e8"
+}

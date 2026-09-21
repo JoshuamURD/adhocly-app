@@ -90,7 +90,6 @@ private final class MockServer: @unchecked Sendable {
                 task.updatedAt = task.createdAt
                 task.completed = operation.body.completed!
                 task.statusId = operation.body.statusId ?? (task.completed ? "complete" : "todo")
-                task.properties = operation.body.properties ?? [:]
                 task.reminders = operation.body.reminders ?? []
                 task.plannedFor = operation.body.plannedFor
                 task.dueOn = operation.body.dueOn
@@ -547,7 +546,7 @@ final class TaskStoreTests: XCTestCase {
 
     func testOlderServerCannotSilentlyDiscardReminders() async throws {
         let server = MockServer()
-        server.protocolVersion(5)
+        server.protocolVersion(6)
         let (store, _) = try connectedStore(server: server, file: file())
         var task = TaskItem(title: "Keep my status")
         task.statusId = "doing"
@@ -557,7 +556,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertTrue(server.sent.isEmpty)
         XCTAssertEqual(store.pendingCount, 1)
         XCTAssertTrue(store.syncError?.contains("Update the Rust server") == true)
-        server.protocolVersion(6)
+        server.protocolVersion(7)
         await store.sync(token: "")
         XCTAssertEqual(store.pendingCount, 0)
         XCTAssertEqual(store.tasks[0].statusId, "doing")
@@ -692,14 +691,11 @@ final class TaskStoreTests: XCTestCase {
         let reviewId = "review-" + UUID().uuidString.lowercased()
         status.options.append(FieldOption(id: reviewId, name: reviewId))
         status.options[status.options.firstIndex { $0.id == "complete" }!].name = "Shipped"
-        try a.saveField(status, replacing: originalStatus)
-        let priority = TaskField(name: "Priority \(UUID().uuidString)", options: [FieldOption(id: "high", name: "High"), FieldOption(id: "low", name: "Low")])
-        try a.saveField(priority)
-        let board = KanbanBoard(name: "Priority board", fieldId: priority.id)
+        try a.saveStatuses(status, replacing: originalStatus)
+        let board = KanbanBoard(name: "Workflow board")
         try a.saveBoard(board)
         var captured = try Capture.parse("Send report !Monday 9am @two weeks from now /Inbox", projects: a.projects).task
         captured.statusId = reviewId
-        captured.properties[priority.id] = "high"
         captured.repeatWeekday = 1
         try a.save(captured)
 
@@ -710,15 +706,14 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.pendingCount, 0)
         await b.sync(token: token)
         let original = try XCTUnwrap(b.tasks.first { $0.id == captured.id })
-        XCTAssertEqual(original.properties[priority.id], "high")
         XCTAssertEqual(original.statusId, reviewId)
         XCTAssertEqual(original.plannedFor, captured.plannedFor)
         XCTAssertEqual(original.dueOn, captured.dueOn)
         XCTAssertTrue(b.boards.contains(board))
         XCTAssertEqual(b.completeName, "Shipped")
 
-        let lanes = Kanban.lanes(field: priority, tasks: relaunched.tasks, completeName: relaunched.completeName)
-        try relaunched.move(captured.id, to: lanes.first { $0.value == "low" }!, on: board)
+        let lanes = Kanban.lanes(status: status)
+        try relaunched.move(captured.id, to: lanes.first { $0.value == "doing" }!, on: board)
         await relaunched.sync(token: token)
         var offlineEdit = original
         offlineEdit.title = "Saved from a second device"
@@ -729,16 +724,16 @@ final class TaskStoreTests: XCTestCase {
         await b.sync(token: token)
         XCTAssertNil(b.issue)
         let copy = try XCTUnwrap(b.tasks.first { $0.title == offlineEdit.title })
-        XCTAssertEqual(copy.properties[priority.id], "high")
+        XCTAssertEqual(copy.statusId, reviewId)
 
-        // A stale property editor cannot silently overwrite another device's configuration.
-        var serverField = priority
-        serverField.name = "Server priority \(priority.id)"
-        try relaunched.saveField(serverField, replacing: priority)
+        // A stale status editor cannot silently overwrite another device's configuration.
+        var serverField = status
+        serverField.name = "Server status"
+        try relaunched.saveStatuses(serverField, replacing: status)
         await relaunched.sync(token: token)
-        var localField = priority
-        localField.name = "Local priority \(priority.id)"
-        try b.saveField(localField, replacing: priority)
+        var localField = status
+        localField.name = "Local status"
+        try b.saveStatuses(localField, replacing: status)
         await b.sync(token: token)
         XCTAssertEqual(b.issue?.entityKind, "task-fields")
         XCTAssertEqual(b.tasks.count, 2, "Configuration outbox entries must not erase task projections")
@@ -748,19 +743,18 @@ final class TaskStoreTests: XCTestCase {
         await relaunched.sync(token: token)
         XCTAssertTrue(relaunched.taskFields.contains { $0.name == localField.name })
 
-        try relaunched.move(captured.id, to: lanes.last!, on: board)
+        try relaunched.move(captured.id, to: lanes.first { $0.isComplete }!, on: board)
         await relaunched.sync(token: token)
         XCTAssertNil(relaunched.issue)
         let successor = try XCTUnwrap(relaunched.tasks.first { $0.id == "next:\(captured.id)" })
         XCTAssertEqual(successor.statusId, "todo")
-        XCTAssertEqual(successor.properties[priority.id], "low")
         await b.sync(token: token)
         for id in [captured.id, successor.id, copy.id] { try b.delete(id) }
         try b.deleteBoard(board.id)
         await b.sync(token: token)
         XCTAssertNil(b.issue)
         XCTAssertEqual(b.pendingCount, 0)
-        try b.saveField(originalStatus, replacing: b.statusField)
+        try b.saveStatuses(originalStatus, replacing: b.statusField)
         await b.sync(token: token)
         XCTAssertNil(b.issue)
     }
@@ -931,7 +925,7 @@ extension TaskStoreTests {
             XCTAssertEqual(b.boards.first { $0.id == board.id }, board)
             XCTAssertEqual(board.sortMode, mode)
         }
-        let todo = Kanban.lanes(field: a.statusField, tasks: a.tasks, completeName: a.completeName)[0]
+        let todo = Kanban.lanes(status: a.statusField)[0]
         try a.move(second.id, to: todo, on: board, relativeTo: first.id)
         let relaunched = try TaskStore(fileURL: file)
         await relaunched.sync(token: token)

@@ -473,160 +473,6 @@
         }
       }
     },
-    "/api/metadata-fields": {
-      "get": {
-        "tags": [
-          "projects"
-        ],
-        "operationId": "listMetadataFields",
-        "responses": {
-          "200": {
-            "description": "Metadata fields available to every project",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/MetadataField"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "projects"
-        ],
-        "operationId": "createMetadataField",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MetadataFieldInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Created field",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MetadataField"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid field",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/metadata-fields/{id}": {
-      "put": {
-        "tags": [
-          "projects"
-        ],
-        "operationId": "updateMetadataField",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Field id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MetadataFieldUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Updated field; its kind cannot change",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MetadataField"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid field",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Field not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "projects"
-        ],
-        "operationId": "deleteMetadataField",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Field id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Field deleted from every project"
-          },
-          "404": {
-            "description": "Field not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/projects": {
       "get": {
         "tags": [
@@ -635,7 +481,7 @@
         "operationId": "listProjects",
         "responses": {
           "200": {
-            "description": "Projects with their metadata values",
+            "description": "Projects",
             "content": {
               "application/json": {
                 "schema": {
@@ -891,69 +737,6 @@
         }
       }
     },
-    "/api/projects/{id}/metadata/{fieldId}": {
-      "put": {
-        "tags": [
-          "projects"
-        ],
-        "operationId": "setProjectMetadata",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Project id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "fieldId",
-            "in": "path",
-            "description": "Field id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MetadataValueInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Value saved, or cleared when null/blank"
-          },
-          "400": {
-            "description": "Value does not fit the field kind",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Project or field not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/reminders/{id}": {
       "get": {
         "tags": [
@@ -1100,44 +883,6 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskField"
                   }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "kanban"
-        ],
-        "operationId": "create_field",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskField"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskField"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
                 }
               }
             }
@@ -1494,7 +1239,8 @@
         ],
         "properties": {
           "fieldId": {
-            "type": "string"
+            "type": "string",
+            "description": "Must be \"status\"; custom properties belong to contexts."
           },
           "id": {
             "type": "string"
@@ -1523,7 +1269,8 @@
         ],
         "properties": {
           "fieldId": {
-            "type": "string"
+            "type": "string",
+            "description": "Must be \"status\"; custom properties belong to contexts."
           },
           "id": {
             "type": "string"
@@ -1704,14 +1451,6 @@
         },
         "additionalProperties": false
       },
-      "FieldKind": {
-        "type": "string",
-        "enum": [
-          "text",
-          "number",
-          "choice"
-        ]
-      },
       "FieldOption": {
         "type": "object",
         "required": [
@@ -1783,116 +1522,13 @@
           }
         }
       },
-      "MetadataField": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "kind",
-          "options",
-          "createdAt"
-        ],
-        "properties": {
-          "createdAt": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/FieldKind"
-          },
-          "name": {
-            "type": "string"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "MetadataFieldInput": {
-        "type": "object",
-        "required": [
-          "name",
-          "kind"
-        ],
-        "properties": {
-          "id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Optional client-selected entity id; sync uses a separate mutation id for safe replay."
-          },
-          "kind": {
-            "$ref": "#/components/schemas/FieldKind"
-          },
-          "name": {
-            "type": "string"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "MetadataFieldUpdate": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "MetadataValue": {
-        "type": "object",
-        "required": [
-          "fieldId",
-          "value"
-        ],
-        "properties": {
-          "fieldId": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          }
-        }
-      },
-      "MetadataValueInput": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Omit or send null/blank to clear the value."
-          }
-        }
-      },
       "Project": {
         "type": "object",
         "required": [
           "id",
           "name",
           "createdAt",
-          "updatedAt",
-          "metadata"
+          "updatedAt"
         ],
         "properties": {
           "createdAt": {
@@ -1907,13 +1543,6 @@
           },
           "id": {
             "type": "string"
-          },
-          "metadata": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/MetadataValue"
-            },
-            "description": "Loaded in a second query, never a column on `projects`."
           },
           "name": {
             "type": "string"
@@ -2046,7 +1675,6 @@
           "tasks",
           "projects",
           "folders",
-          "fields",
           "taskFields",
           "boards",
           "versions"
@@ -2074,12 +1702,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/WorkContext"
-            }
-          },
-          "fields": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/MetadataField"
             }
           },
           "folders": {
@@ -2160,15 +1782,6 @@
           "projectId": {
             "type": "string"
           },
-          "properties": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
           "reminders": {
             "type": "array",
             "items": {
@@ -2195,6 +1808,7 @@
       },
       "TaskField": {
         "type": "object",
+        "description": "Shared task status configuration; the historical wire shape is retained for sync retries.",
         "required": [
           "id",
           "name",
@@ -2203,10 +1817,12 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Must be \"status\"."
           },
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "Must be \"choice\"."
           },
           "name": {
             "type": "string"
@@ -2258,19 +1874,6 @@
           },
           "projectId": {
             "type": "string"
-          },
-          "properties": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "description": "Omission preserves existing properties. An empty map explicitly clears them.",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
           },
           "reminders": {
             "type": [
@@ -2372,7 +1975,7 @@
     },
     {
       "name": "projects",
-      "description": "Projects and their user-defined metadata"
+      "description": "Projects"
     },
     {
       "name": "folders",

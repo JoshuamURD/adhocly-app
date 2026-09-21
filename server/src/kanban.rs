@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use axum::{
     extract::{Path, State},
@@ -11,7 +11,6 @@ use utoipa::ToSchema;
 
 use crate::{
     error::AppError,
-    projects::FieldKind,
     state::AppState,
     sync::{SyncOperation, Write},
 };
@@ -25,9 +24,12 @@ pub(crate) struct FieldOption {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, FromRow)]
 #[serde(deny_unknown_fields)]
+/// Shared task status configuration; the historical wire shape is retained for sync retries.
 pub(crate) struct TaskField {
+    /// Must be "status".
     pub id: String,
     pub name: String,
+    /// Must be "choice".
     // Stored as a string so FromRow doesn't need a database-specific enum encoding.
     pub kind: String,
     #[schema(value_type = Vec<FieldOption>)]
@@ -39,6 +41,7 @@ pub(crate) struct TaskField {
 pub(crate) struct Board {
     pub id: String,
     pub name: String,
+    /// Must be "status"; custom properties belong to contexts.
     pub field_id: String,
     #[serde(default = "default_sort_mode")]
     pub sort_mode: String,
@@ -56,6 +59,7 @@ fn default_sort_mode() -> String {
 pub(crate) struct BoardInput {
     pub id: String,
     pub name: String,
+    /// Must be "status"; custom properties belong to contexts.
     pub field_id: String,
     /// Missing sorting fields preserve existing settings for older clients.
     pub sort_mode: Option<String>,
@@ -89,20 +93,13 @@ impl KanbanRepository {
         .await?)
     }
 
-    pub async fn save_field(
-        &self,
-        mut field: TaskField,
-        create: bool,
-    ) -> Result<TaskField, AppError> {
-        validate_id(&field.id)?;
+    pub async fn save_field(&self, mut field: TaskField) -> Result<TaskField, AppError> {
+        if field.id != "status" || field.kind != "choice" {
+            return Err(AppError::Invalid("only task statuses can be edited; use contexts for custom properties"));
+        }
         field.name = field.name.trim().to_owned();
         if field.name.is_empty() {
-            return Err(AppError::Invalid("field name is required"));
-        }
-        let kind =
-            FieldKind::parse(&field.kind).ok_or(AppError::Invalid("unknown task field kind"))?;
-        if kind != FieldKind::Choice && !field.options.is_empty() {
-            return Err(AppError::Invalid("only choice fields have options"));
+            return Err(AppError::Invalid("status heading is required"));
         }
         let mut ids = BTreeSet::new();
         let mut names = BTreeSet::new();
@@ -118,69 +115,30 @@ impl KanbanRepository {
                 ));
             }
         }
-        if kind == FieldKind::Choice && field.options.is_empty() {
-            return Err(AppError::Invalid("choice fields need at least one option"));
-        }
-        if field.id == "status"
-            && (kind != FieldKind::Choice || !ids.contains("todo") || !ids.contains("complete"))
-        {
-            return Err(AppError::Invalid(
-                "Status must keep the todo and complete options; their names may change",
-            ));
+        if !ids.contains("todo") || !ids.contains("complete") {
+            return Err(AppError::Invalid("Status must keep the todo and complete options; their names may change"));
         }
         let mut write = Write::begin(&self.db, self.sync.as_ref()).await?;
         if let Some(value) = write.replay()? {
             return Ok(value);
         }
         let conn = &mut *write.transaction;
-        if !create {
-            let existing: Option<String> =
-                sqlx::query_scalar("SELECT kind FROM task_fields WHERE id = ?")
-                    .bind(&field.id)
-                    .fetch_optional(&mut *conn)
-                    .await?;
-            let existing = existing.ok_or(AppError::NotFound("task field"))?;
-            if existing != field.kind {
-                return Err(AppError::Invalid(
-                    "a field's type cannot change; create a new field",
-                ));
-            }
-            let values: Vec<String> = if field.id == "status" {
-                sqlx::query_scalar("SELECT DISTINCT status_id FROM tasks")
-                    .fetch_all(&mut *conn)
-                    .await?
-            } else {
-                sqlx::query_scalar("SELECT DISTINCT value FROM tasks, json_each(tasks.properties) WHERE json_each.key = ?")
-                    .bind(&field.id).fetch_all(&mut *conn).await?
-            };
-            if kind == FieldKind::Choice && values.iter().any(|v| !ids.contains(v)) {
-                return Err(AppError::Invalid(
-                    "an option still has tasks; move them before removing it",
-                ));
-            }
+        let values: Vec<String> = sqlx::query_scalar("SELECT DISTINCT status_id FROM tasks")
+            .fetch_all(&mut *conn).await?;
+        if values.iter().any(|v| !ids.contains(v)) {
+            return Err(AppError::Invalid("a status still has tasks; move them before removing it"));
         }
-        let options = serde_json::to_string(&field.options)?;
-        if create {
-            sqlx::query("INSERT INTO task_fields (id, name, kind, options) VALUES (?, ?, ?, ?)")
-                .bind(&field.id)
-                .bind(&field.name)
-                .bind(&field.kind)
-                .bind(options)
-                .execute(conn)
-                .await?;
-        } else {
-            sqlx::query("UPDATE task_fields SET name = ?, options = ? WHERE id = ?")
-                .bind(&field.name)
-                .bind(options)
-                .bind(&field.id)
-                .execute(conn)
-                .await?;
-        }
+        sqlx::query("UPDATE task_fields SET name = ?, options = ? WHERE id = 'status'")
+            .bind(&field.name).bind(serde_json::to_string(&field.options)?)
+            .execute(conn).await?;
         write.commit(field).await
     }
 
     pub async fn save_board(&self, mut board: BoardInput, create: bool) -> Result<Board, AppError> {
         validate_id(&board.id)?;
+        if board.field_id != "status" {
+            return Err(AppError::Invalid("boards can only group tasks by status"));
+        }
         board.name = board.name.trim().to_owned();
         if board.name.is_empty() {
             return Err(AppError::Invalid("board name is required"));
@@ -282,12 +240,11 @@ fn validate_id(id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Task fields and values are checked inside the same write transaction as the task, so an option
-/// cannot be removed between validation and saving. Missing properties on old clients are preserved.
-pub(crate) async fn validate_task_values(
+/// Task statuses are checked inside the same write transaction as the task, so an option
+/// cannot be removed between validation and saving.
+pub(crate) async fn validate_task_status(
     conn: &mut SqliteConnection,
     status: &str,
-    properties: &BTreeMap<String, String>,
 ) -> Result<(), AppError> {
     let fields = KanbanRepository::fields_in(conn).await?;
     let status_field = fields
@@ -296,24 +253,6 @@ pub(crate) async fn validate_task_values(
         .ok_or(AppError::Internal("status field is missing"))?;
     if !status_field.options.iter().any(|o| o.id == status) {
         return Err(AppError::Invalid("unknown task status"));
-    }
-    for (id, value) in properties {
-        if id == "status" {
-            return Err(AppError::Invalid("use statusId for a task's status"));
-        }
-        let field = fields
-            .iter()
-            .find(|f| f.id == *id)
-            .ok_or(AppError::Invalid("unknown task property"))?;
-        match FieldKind::parse(&field.kind).ok_or(AppError::Invalid("unknown task field kind"))? {
-            FieldKind::Choice if !field.options.iter().any(|o| o.id == *value) => {
-                return Err(AppError::Invalid("unknown task property option"))
-            }
-            FieldKind::Number if !value.parse::<f64>().is_ok_and(f64::is_finite) => {
-                return Err(AppError::Invalid("task property must be a finite number"))
-            }
-            _ => {}
-        }
     }
     Ok(())
 }
@@ -326,16 +265,6 @@ pub(crate) async fn list_fields(
         KanbanRepository::fields_in(&mut *state.pool().acquire().await?).await?,
     ))
 }
-#[utoipa::path(post, path = "/api/task-fields", request_body = TaskField, responses((status = 201, body = TaskField), (status = 400, body = String)), tag = "kanban")]
-pub(crate) async fn create_field(
-    State(state): State<AppState>,
-    Json(input): Json<TaskField>,
-) -> Result<(StatusCode, Json<TaskField>), AppError> {
-    Ok((
-        StatusCode::CREATED,
-        Json(state.kanban.save_field(input, true).await?),
-    ))
-}
 #[utoipa::path(put, path = "/api/task-fields/{id}", params(("id" = String, Path)), request_body = TaskField, responses((status = 200, body = TaskField), (status = 400, body = String)), tag = "kanban")]
 pub(crate) async fn update_field(
     Path(id): Path<String>,
@@ -345,7 +274,7 @@ pub(crate) async fn update_field(
     if id != input.id {
         return Err(AppError::Invalid("path and field ids must match"));
     }
-    Ok(Json(state.kanban.save_field(input, false).await?))
+    Ok(Json(state.kanban.save_field(input).await?))
 }
 #[utoipa::path(get, path = "/api/boards", responses((status = 200, body = [Board])), tag = "kanban")]
 pub(crate) async fn list_boards(

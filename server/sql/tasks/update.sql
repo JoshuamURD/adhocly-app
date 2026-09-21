@@ -7,7 +7,6 @@ UPDATE tasks SET
     repeat_weekday = ?,
     completed = ?,
     status_id = ?,
-    properties = ?,
     reminders = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?

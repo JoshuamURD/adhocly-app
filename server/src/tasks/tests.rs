@@ -73,7 +73,6 @@ async fn crud_round_trip() {
         repeat_weekday: Some(3),
         completed: false,
         status_id: None,
-        properties: None,
         reminders: None,
         details: None,
     };
@@ -137,7 +136,6 @@ async fn crud_round_trip() {
         repeat_weekday: Some(5),
         completed: true,
         status_id: None,
-        properties: None,
         reminders: None,
         details: None,
     };
@@ -197,7 +195,6 @@ async fn rejects_unknown_project() {
         repeat_weekday: None,
         completed: false,
         status_id: None,
-        properties: None,
         reminders: None,
         details: None,
     };

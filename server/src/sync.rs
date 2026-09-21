@@ -39,16 +39,9 @@ impl SyncOperation {
             .collect()
     }
 
-    /// The revision this operation is checked against. A project's metadata values carry their own
-    /// revisions (`projects/{id}/metadata/{field}`) so they do not conflict with the project row.
+    /// The revision this operation is checked against.
     fn key(&self) -> Result<String, AppError> {
         let parts = self.parts()?;
-        if parts.len() == 4 && parts[0] == "projects" && parts[2] == "metadata" {
-            if parts[1].trim().is_empty() || parts[3].trim().is_empty() {
-                return Err(AppError::Invalid("sync requires an entity id"));
-            }
-            return Ok(format!("projects/{}/metadata/{}", parts[1], parts[3]));
-        }
         let id = if parts.len() == 1 && self.method == "POST" {
             self.body.get("id").and_then(Value::as_str)
         } else {
@@ -70,7 +63,6 @@ pub(crate) struct SyncSnapshot {
     tasks: Vec<tasks::Task>,
     projects: Vec<projects::Project>,
     folders: Vec<folders::Folder>,
-    fields: Vec<projects::MetadataField>,
     task_fields: Vec<kanban::TaskField>,
     boards: Vec<kanban::Board>,
     versions: Versions,
@@ -185,14 +177,13 @@ impl Write {
 async fn snapshot(pool: &SqlitePool) -> Result<SyncSnapshot, AppError> {
     let mut tx = pool.begin().await?;
     let snapshot = SyncSnapshot {
-        protocol_version: 6,
+        protocol_version: 7,
         contexts: contexts::contexts_in(&mut tx).await?,
         contacts: contexts::contacts_in(&mut tx).await?,
         context_links: contexts::links_in(&mut tx).await?,
         tasks: tasks::SqliteTaskRepository::list_in(&mut tx).await?,
         projects: projects::SqliteProjectRepository::list_in(&mut tx).await?,
         folders: folders::SqliteFolderRepository::list_in(&mut tx).await?,
-        fields: projects::SqliteProjectRepository::list_fields_in(&mut tx).await?,
         task_fields: kanban::KanbanRepository::fields_in(&mut tx).await?,
         boards: kanban::KanbanRepository::boards_in(&mut tx).await?,
         versions: versions(&mut tx).await?,
@@ -256,9 +247,6 @@ pub(crate) async fn apply(
         ("PUT", ["context-links", id]) => {
             let _ = contexts::save_links(Path(id.to_string()), scoped, body!()).await?;
         }
-        ("POST", ["task-fields"]) => {
-            let _ = kanban::create_field(scoped, body!()).await?;
-        }
         ("PUT", ["task-fields", id]) => {
             let _ = kanban::update_field(Path(id.to_string()), scoped, body!()).await?;
         }
@@ -295,14 +283,6 @@ pub(crate) async fn apply(
         ("PUT", ["projects", id, "folder"]) => {
             let _ = projects::move_project(Path(id.to_string()), scoped, body!()).await?;
         }
-        ("PUT", ["projects", id, "metadata", field]) => {
-            let _ = projects::set_project_metadata(
-                Path((id.to_string(), field.to_string())),
-                scoped,
-                body!(),
-            )
-            .await?;
-        }
         ("POST", ["folders"]) => {
             let _ = folders::create_folder(scoped, body!()).await?;
         }
@@ -311,15 +291,6 @@ pub(crate) async fn apply(
         }
         ("DELETE", ["folders", id]) => {
             let _ = folders::delete_folder(Path(id.to_string()), scoped).await?;
-        }
-        ("POST", ["metadata-fields"]) => {
-            let _ = projects::create_metadata_field(scoped, body!()).await?;
-        }
-        ("PUT", ["metadata-fields", id]) => {
-            let _ = projects::update_metadata_field(Path(id.to_string()), scoped, body!()).await?;
-        }
-        ("DELETE", ["metadata-fields", id]) => {
-            let _ = projects::delete_metadata_field(Path(id.to_string()), scoped).await?;
         }
         _ => return Err(AppError::Invalid("unsupported sync operation")),
     }

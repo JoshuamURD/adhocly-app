@@ -8,16 +8,31 @@ final class WorkspaceTests: XCTestCase {
         app.tabBars.buttons["Contexts"].tap()
         XCTAssertTrue(app.navigationBars["Contexts & contacts"].waitForExistence(timeout: 5))
         app.buttons["new-context"].tap()
-        app.buttons["Blank context"].tap()
-        let name = "Context \(UUID().uuidString.prefix(6))"
+        app.buttons["Legal matter"].tap()
+        let suffix = " \(UUID().uuidString.prefix(6))"
+        let name = "New matter\(suffix)"
         let input = app.textFields["Context name"]
         XCTAssertTrue(input.waitForExistence(timeout: 5))
         input.tap()
-        input.typeText(name)
+        input.typeText(suffix)
         app.buttons["Save"].tap()
         app.buttons[name].tap()
         XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["context-work-search"].exists)
+        app.buttons["context-property-filters"].tap()
+        let property = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "context-property-filter-")).firstMatch
+        XCTAssertTrue(property.waitForExistence(timeout: 5))
+        property.tap()
+        app.buttons["Not set"].tap()
+        XCTAssertTrue(app.buttons["clear-context-filters"].exists)
+        screenshot("iPhone — Context property filter", app: app)
+        app.buttons["clear-context-filters"].tap()
+        let scope = app.segmentedControls["context-explore-scope"]
+        if !scope.isHittable { app.swipeUp() }
+        scope.buttons["Tasks (0)"].tap()
+        if !app.buttons["context-task-filter"].isHittable { app.swipeUp() }
         XCTAssertTrue(app.buttons["context-task-filter"].exists)
+        screenshot("iPhone — Context task explorer", app: app)
         XCTAssertTrue(app.tabBars.buttons["Contexts"].isSelected)
         app.buttons["Edit context"].tap()
         XCTAssertTrue(input.waitForExistence(timeout: 5))

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "-- `completed` is INTEGER in SQLite, which sqlx would infer as i64; the annotation maps it to\n-- the Rust bool field. It must stay on the column for query_file_as(Task, ..) to compile.\nSELECT\n    t.id,\n    t.title,\n    t.details,\n    t.project_id,\n    p.name AS project,\n    t.planned_for,\n    t.due_on,\n    t.repeat_weekday,\n    t.created_at,\n    t.updated_at,\n    t.completed AS \"completed: bool\",\n    t.status_id,\n    t.reminders AS \"reminders: sqlx::types::Json<Vec<super::model::CustomReminder>>\",\n    t.properties AS \"properties: sqlx::types::Json<std::collections::BTreeMap<String, String>>\"\nFROM tasks t\nJOIN projects p ON p.id = t.project_id\nWHERE t.id = ?\n",
+  "query": "-- `completed` is INTEGER in SQLite, which sqlx would infer as i64; the annotation maps it to\n-- the Rust bool field. It must stay on the column for query_file_as(Task, ..) to compile.\nSELECT\n    t.id,\n    t.title,\n    t.details,\n    t.project_id,\n    p.name AS project,\n    t.planned_for,\n    t.due_on,\n    t.repeat_weekday,\n    t.created_at,\n    t.updated_at,\n    t.completed AS \"completed: bool\",\n    t.status_id,\n    t.reminders AS \"reminders: sqlx::types::Json<Vec<super::model::CustomReminder>>\"\nFROM tasks t\nJOIN projects p ON p.id = t.project_id\nWHERE t.id = ?\n",
   "describe": {
     "columns": [
       {
@@ -145,17 +145,6 @@
             "name": "reminders"
           }
         }
-      },
-      {
-        "name": "properties: sqlx::types::Json<std::collections::BTreeMap<String, String>>",
-        "ordinal": 13,
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "tasks",
-            "name": "properties"
-          }
-        }
       }
     ],
     "parameters": {
@@ -174,9 +163,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "91ba1e3fe19816b129bfc6fe7401e06d8abfe6780c2e1b5b30a826d7f5d3a5c9"
+  "hash": "8bde4c257b709726f3c12242557dec4422d1c484b6b47e3816b7c25f81189c17"
 }

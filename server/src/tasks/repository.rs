@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     error::AppError,
-    kanban::validate_task_values,
+    kanban::validate_task_status,
     sync::{SyncOperation, Write},
 };
 
@@ -68,8 +68,7 @@ impl TaskRepository for SqliteTaskRepository {
             return Ok(value);
         }
         let conn = &mut *write.transaction;
-        let (status, properties) = Self::values(conn, input, None).await?;
-        let properties = serde_json::to_string(&properties)?;
+        let status = Self::status(conn, input, None).await?;
         let reminders = Self::reminders(conn, input.reminders.as_deref().unwrap_or(&[])).await?;
         sqlx::query_file!(
             "sql/tasks/insert.sql",
@@ -82,7 +81,6 @@ impl TaskRepository for SqliteTaskRepository {
             input.repeat_weekday,
             input.completed,
             status,
-            properties,
             reminders
         )
         .execute(&mut *conn)
@@ -99,8 +97,7 @@ impl TaskRepository for SqliteTaskRepository {
         }
         let conn = &mut *write.transaction;
         let current = Self::fetch(&mut *conn, id).await?;
-        let (status, properties) = Self::values(conn, input, Some(&current)).await?;
-        let properties = serde_json::to_string(&properties)?;
+        let status = Self::status(conn, input, Some(&current)).await?;
         let reminders = Self::reminders(conn, input.reminders.as_deref().unwrap_or(&current.reminders)).await?;
         sqlx::query_file!(
             "sql/tasks/update.sql",
@@ -112,7 +109,6 @@ impl TaskRepository for SqliteTaskRepository {
             input.repeat_weekday,
             input.completed,
             status,
-            properties,
             reminders,
             id
         )
@@ -212,11 +208,11 @@ impl SqliteTaskRepository {
         Ok(serde_json::to_string(reminders)?)
     }
 
-    async fn values(
+    async fn status(
         conn: &mut sqlx::SqliteConnection,
         input: &TaskInput,
         current: Option<&Task>,
-    ) -> Result<(String, std::collections::BTreeMap<String, String>), AppError> {
+    ) -> Result<String, AppError> {
         let fallback = if input.completed {
             "complete"
         } else {
@@ -229,14 +225,8 @@ impl SqliteTaskRepository {
         if input.completed != (status == "complete") {
             return Err(AppError::Invalid("statusId and completed must agree"));
         }
-        let mut properties = input.properties.clone().unwrap_or_else(|| {
-            current
-                .map(|task| task.properties.0.clone())
-                .unwrap_or_default()
-        });
-        properties.retain(|_, value| !value.trim().is_empty());
-        validate_task_values(conn, status, &properties).await?;
-        Ok((status.to_owned(), properties))
+        validate_task_status(conn, status).await?;
+        Ok(status.to_owned())
     }
 
     /// One completion path for checkbox toggles, Kanban moves and ordinary API updates.

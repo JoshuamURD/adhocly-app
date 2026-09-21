@@ -64,7 +64,6 @@ final class CaptureTests: XCTestCase {
         original.dueOn = "2026-03-09T16:00"
         original.completed = true
         original.statusId = "complete"
-        original.properties = ["priority": "high"]
         original.repeatWeekday = 2
         original.reminders = [CustomReminder(kind: .due, offsetUnit: .days, offsetValue: 1)]
         let text = Capture.editingText(for: original.title)
@@ -141,38 +140,32 @@ final class KanbanStoreTests: XCTestCase {
         return directory.appending(path: "state.json")
     }
 
-    func testOfflineStatusesPropertiesBoardsAndMovesSurviveRestart() throws {
+    func testOfflineStatusesBoardsAndMovesSurviveRestart() throws {
         let file = file()
         let store = try TaskStore(fileURL: file)
         let original = store.statusField
         var status = original
         status.options[2].name = "Shipped"
         status.options.append(FieldOption(id: "review", name: "Review"))
-        try store.saveField(status, replacing: original)
-        let field = TaskField(id: "priority", name: "Priority", options: [FieldOption(id: "high", name: "High"), FieldOption(id: "low", name: "Low")])
-        try store.saveField(field)
-        let board = KanbanBoard(id: "priority", name: "Priorities", fieldId: field.id)
+        try store.saveStatuses(status, replacing: original)
+        let board = KanbanBoard(name: "Workflow")
         try store.saveBoard(board)
         let task = TaskItem(title: "Offline card")
         try store.save(task)
-        let lanes = Kanban.lanes(field: field, tasks: store.tasks, completeName: store.completeName)
-        try store.move(task.id, to: lanes.first { $0.value == "high" }!, on: board)
-        XCTAssertEqual(store.tasks[0].properties["priority"], "high")
-        try store.move(task.id, to: lanes.last!, on: board)
+        let lanes = Kanban.lanes(status: status)
+        try store.move(task.id, to: lanes.first { $0.value == "doing" }!, on: board)
+        XCTAssertEqual(store.tasks[0].statusId, "doing")
+        try store.move(task.id, to: lanes.first { $0.isComplete }!, on: board)
         XCTAssertTrue(store.tasks[0].completed)
-        XCTAssertEqual(store.tasks[0].statusId, "complete")
-        try store.move(task.id, to: lanes.first { $0.value == "low" }!, on: board)
-        XCTAssertFalse(store.tasks[0].completed)
-        XCTAssertEqual(store.tasks[0].statusId, "todo")
-        let statusLanes = Kanban.lanes(field: status, tasks: store.tasks, completeName: store.completeName)
-        try store.move(task.id, to: statusLanes.first { $0.value == "review" }!, on: .status)
+        try store.move(task.id, to: lanes.first { $0.value == "review" }!, on: board)
         let restored = try TaskStore(fileURL: file)
         XCTAssertEqual(restored.tasks[0].statusId, "review")
-        XCTAssertEqual(restored.tasks[0].properties["priority"], "low")
+        XCTAssertFalse(restored.tasks[0].completed)
         XCTAssertEqual(restored.completeName, "Shipped")
         XCTAssertEqual(restored.boards.count, 2)
-        XCTAssertEqual(Kanban.laneID(task: restored.tasks[0], fieldId: "status"), "value:review")
-        XCTAssertEqual(Kanban.laneID(task: restored.tasks[0], fieldId: "priority"), "value:low")
+        XCTAssertEqual(Kanban.laneID(task: restored.tasks[0]), "value:review")
+        XCTAssertThrowsError(try store.saveBoard(KanbanBoard(name: "Retired", fieldId: "priority")))
+        XCTAssertThrowsError(try store.saveStatuses(TaskField(id: "priority", name: "Priority"), replacing: status))
     }
 
     func testSpecialStatusesAndUsedOptionsCannotBeRemoved() throws {
@@ -180,40 +173,84 @@ final class KanbanStoreTests: XCTestCase {
         let original = store.statusField
         var status = original
         status.options.removeAll { $0.id == "complete" }
-        XCTAssertThrowsError(try store.saveField(status, replacing: original))
+        XCTAssertThrowsError(try store.saveStatuses(status, replacing: original))
         status = original
         status.options.append(FieldOption(name: original.options[0].name))
-        XCTAssertThrowsError(try store.saveField(status, replacing: original))
+        XCTAssertThrowsError(try store.saveStatuses(status, replacing: original))
         var task = TaskItem(title: "Doing")
         task.statusId = "doing"
         try store.save(task)
         status = original
         status.options.removeAll { $0.id == "doing" }
-        XCTAssertThrowsError(try store.saveField(status, replacing: original))
-        task.properties["missing"] = "value"
+        XCTAssertThrowsError(try store.saveStatuses(status, replacing: original))
+        task.statusId = "missing"
         XCTAssertThrowsError(try store.save(task, replacing: store.tasks[0]))
     }
 
     func testStatusLaneOrderMatchesSettingsIncludingComplete() {
         var field = TaskField.status
         field.options.insert(field.options.remove(at: 2), at: 0)
-        let lanes = Kanban.lanes(field: field, tasks: [], completeName: "Complete")
+        let lanes = Kanban.lanes(status: field)
         XCTAssertEqual(lanes.map(\.name), field.options.map(\.name))
         XCTAssertTrue(lanes[0].isComplete)
     }
 
-    func testTextAndNumberPropertyGroupingDoesNotMixCompleteWithValues() {
-        let field = TaskField(id: "owner", name: "Owner", kind: .text)
-        var first = TaskItem(title: "One")
-        first.properties["owner"] = "Complete"
-        var second = TaskItem(title: "Two")
-        second.completed = true
-        second.statusId = "complete"
-        second.properties["owner"] = "Elsewhere"
-        let lanes = Kanban.lanes(field: field, tasks: [first, second], completeName: "Done")
-        XCTAssertEqual(lanes.map(\.id), ["unassigned", "value:Complete", "complete"])
-        XCTAssertEqual(Kanban.laneID(task: first, fieldId: "owner"), "value:Complete")
-        XCTAssertEqual(Kanban.laneID(task: second, fieldId: "owner"), "complete")
+    func testRemovingPropertiesMigratesOfflineDataWithoutChangingSurvivingRequests() throws {
+        let file = file(), store = try TaskStore(fileURL: file)
+        var context = WorkContext(name: "Client")
+        var field = ContextField(name: "Name", kind: .text)
+        field.value = "Acme"
+        context.fields = [field]
+        try store.saveContext(context)
+        var status = store.statusField
+        status.options[2].name = "Shipped"
+        try store.saveStatuses(status, replacing: store.statusField)
+        var task = TaskItem(title: "Keep offline work")
+        task.statusId = "doing"
+        try store.save(task)
+        var links = store.contextLinks(for: "tasks:\(task.id)")
+        links.contextIds = [context.id]
+        try store.saveContextLinks(links, replacing: store.contextLinks(for: links.id))
+        var old = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        old.formatVersion = 8
+        let retired = TaskField(id: "priority", name: "Priority", kind: .text)
+        let board = KanbanBoard(id: "priority", name: "Priorities", fieldId: retired.id)
+        old.snapshot.taskFields.append(retired)
+        old.snapshot.boards.append(board)
+        let taskIndex = try XCTUnwrap(old.pending.firstIndex { $0.taskId == task.id })
+        old.pending[taskIndex].operation.body.properties = ["priority": "High"]
+        let surviving = old.pending.map(\.operation)
+        old.pending.insert(PendingMutation(taskId: retired.id,
+            operation: SyncOperation(url: "/api/task-fields/priority", method: "PUT", body: MutationBody(), expectedVersion: 1),
+            entityKind: "task-fields", localField: retired), at: 0)
+        old.pending.append(PendingMutation(taskId: board.id,
+            operation: SyncOperation(url: "/api/boards/priority", method: "DELETE", body: MutationBody(), expectedVersion: 1),
+            entityKind: "boards"))
+        old.issue = SyncIssue(taskId: retired.id, message: "Stale property", entityKind: "task-fields")
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String: Any]
+        var pending = json["pending"] as! [[String: Any]]
+        var local = pending[taskIndex + 1]["localTask"] as! [String: Any]
+        local["properties"] = ["priority": "High"]
+        pending[taskIndex + 1]["localTask"] = local
+        json["pending"] = pending
+        try JSONSerialization.data(withJSONObject: json).write(to: file)
+
+        let migrated = try TaskStore(fileURL: file)
+        XCTAssertNil(migrated.issue)
+        XCTAssertEqual(migrated.tasks.map(\.title), [task.title])
+        XCTAssertEqual(migrated.tasks[0].statusId, "doing")
+        XCTAssertEqual(migrated.completeName, "Shipped")
+        XCTAssertEqual(migrated.taskFields.map(\.id), ["status"])
+        XCTAssertEqual(migrated.boards.map(\.id), ["status"])
+        XCTAssertEqual(migrated.contexts, [context])
+        XCTAssertEqual(migrated.contextLinks, [links])
+        let saved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        XCTAssertEqual(saved.formatVersion, 9)
+        XCTAssertEqual(saved.pending.map(\.operation), surviving)
+        let encodedTask = try JSONSerialization.jsonObject(with: JSONEncoder().encode(migrated.tasks[0])) as! [String: Any]
+        XCTAssertNil(encodedTask["properties"])
+        XCTAssertNil(MutationBody(task: migrated.tasks[0]).properties)
+        XCTAssertEqual(try TaskStore(fileURL: file).pendingCount, surviving.count)
     }
 
     func testVersionOneOutboxMigratesWithoutChangingFrozenRequest() throws {
@@ -240,7 +277,7 @@ final class KanbanStoreTests: XCTestCase {
         XCTAssertEqual(restored.tasks[0].statusId, "todo")
         try restored.toggle(restored.tasks[0].id)
         let saved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
-        XCTAssertEqual(saved.formatVersion, 8)
+        XCTAssertEqual(saved.formatVersion, 9)
         XCTAssertTrue(restored.folders.isEmpty)
         XCTAssertNil(restored.projects[0].folderId)
         XCTAssertNil(saved.pending[0].operation.body.details)
@@ -346,7 +383,7 @@ extension KanbanStoreTests {
         try store.saveBoard(manual, replacing: board)
         board = try XCTUnwrap(store.boards.first { $0.id == "status" })
         XCTAssertEqual(board.manualOrder, cards.map(\.id), "Entering manual mode keeps the displayed order")
-        let lanes = Kanban.lanes(field: store.statusField, tasks: store.tasks, completeName: store.completeName)
+        let lanes = Kanban.lanes(status: store.statusField)
         let todo = lanes[0], doing = lanes[1]
         let pending = store.pendingCount
         try store.move(cards[3].id, to: todo, on: board, relativeTo: cards[0].id)
@@ -385,7 +422,7 @@ extension KanbanStoreTests {
         try store.saveBoard(board, replacing: .status)
         board = try XCTUnwrap(store.boards.first { $0.id == "status" })
         let tasks = store.tasks, pending = store.pendingCount
-        let lane = Kanban.lanes(field: store.statusField, tasks: tasks, completeName: store.completeName)[1]
+        let lane = Kanban.lanes(status: store.statusField)[1]
         let directory = file.deletingLastPathComponent()
         try FileManager.default.removeItem(at: directory)
         try Data().write(to: directory) // A file instead of a directory makes the atomic save fail.

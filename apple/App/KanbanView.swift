@@ -5,7 +5,6 @@ struct KanbanView: View {
     let model: AppModel
     let store: TaskStore
     let board: KanbanBoard
-    let field: TaskField
     let tasks: [TaskItem]
     let editTask: (TaskItem) -> Void
     let addTask: (TaskItem) -> Void
@@ -15,7 +14,7 @@ struct KanbanView: View {
     @State private var targetedCard: String?
     @State private var cardHeights: [String: CGFloat] = [:]
 
-    private var lanes: [KanbanLane] { Kanban.lanes(field: field, tasks: store.tasks, completeName: store.completeName) }
+    private var lanes: [KanbanLane] { Kanban.lanes(status: store.statusField) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -53,14 +52,14 @@ struct KanbanView: View {
                 .accessibilityLabel("Sort cards")
             }
             ToolbarItem(placement: .secondaryAction) {
-                Button("Edit \(field.id == "status" ? "statuses" : "property")", systemImage: "slider.horizontal.3") { editColumns = true }
+                Button("Edit statuses", systemImage: "slider.horizontal.3") { editColumns = true }
             }
         }
-        .sheet(isPresented: $editColumns) { FieldEditorView(model: model, store: store, draft: field, original: field) }
+        .sheet(isPresented: $editColumns) { StatusEditorView(model: model, store: store, draft: store.statusField, original: store.statusField) }
     }
 
     private func column(_ lane: KanbanLane, width: CGFloat) -> some View {
-        let cards = Kanban.sorted(tasks, on: board).filter { Kanban.laneID(task: $0, fieldId: field.id) == lane.id }
+        let cards = Kanban.sorted(tasks, on: board).filter { Kanban.laneID(task: $0) == lane.id }
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: lane.isComplete ? "checkmark.circle.fill" : "circle.dotted")
@@ -79,8 +78,7 @@ struct KanbanView: View {
                 Button {
                     var task = TaskItem()
                     if lane.isComplete { task.statusId = "complete"; task.completed = true }
-                    else if field.id == "status" { task.statusId = lane.value! }
-                    else { task.properties[field.id] = lane.value }
+                    else { task.statusId = lane.value! }
                     addTask(task)
                 } label: { Image(systemName: "plus").frame(width: AppStyle.controlSide, height: AppStyle.controlSide) }
                 .buttonStyle(.plain)
@@ -175,7 +173,6 @@ struct KanbanView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(task.completed ? "Reopen \(task.title)" : "Complete \(task.title)")
-                if field.id != "status" { Text(store.statusName(task.statusId)).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 if store.isPending(task.id) {
                     Image(systemName: "clock.arrow.circlepath").font(.caption)
@@ -193,7 +190,7 @@ struct KanbanView: View {
                         .disabled(index == cards.count - 1)
                         Divider()
                     }
-                    ForEach(lanes.filter { $0.id != Kanban.laneID(task: task, fieldId: field.id) }) { lane in
+                    ForEach(lanes.filter { $0.id != Kanban.laneID(task: task) }) { lane in
                         Button("Move to \(lane.name)") { model.perform { try store.move(task.id, to: lane, on: board) } }
                     }
                     Divider()

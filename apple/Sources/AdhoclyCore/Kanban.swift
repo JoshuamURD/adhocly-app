@@ -9,6 +9,7 @@ public struct FieldOption: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+// The status configuration retains its historical wire shape for queued sync requests.
 public struct TaskField: Codable, Equatable, Identifiable, Sendable {
     public enum Kind: String, Codable, CaseIterable, Sendable { case text, number, choice }
     public var id: String
@@ -106,31 +107,15 @@ public enum Kanban {
         }
     }
 
-    public static func lanes(field: TaskField, tasks: [TaskItem], completeName: String) -> [KanbanLane] {
-        if field.id == "status" {
-            return field.options.map { option in
-                option.id == "complete"
-                    ? KanbanLane(id: "complete", name: option.name, value: nil, isComplete: true)
-                    : KanbanLane(id: "value:\(option.id)", name: option.name, value: option.id, isComplete: false)
-            }
+    public static func lanes(status: TaskField) -> [KanbanLane] {
+        status.options.map { option in
+            option.id == "complete"
+                ? KanbanLane(id: "complete", name: option.name, value: nil, isComplete: true)
+                : KanbanLane(id: "value:\(option.id)", name: option.name, value: option.id, isComplete: false)
         }
-        let options: [FieldOption]
-        if field.kind == .choice {
-            options = field.options
-        } else {
-            options = Set(tasks.filter { !$0.completed }.compactMap { $0.properties[field.id] })
-                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-                .map { FieldOption(id: $0, name: $0) }
-        }
-        var lanes = options.map { KanbanLane(id: "value:\($0.id)", name: $0.name, value: $0.id, isComplete: false) }
-        lanes.insert(KanbanLane(id: "unassigned", name: "Unassigned", value: nil, isComplete: false), at: 0)
-        lanes.append(KanbanLane(id: "complete", name: completeName, value: nil, isComplete: true))
-        return lanes
     }
 
-    public static func laneID(task: TaskItem, fieldId: String) -> String {
-        if task.completed { return "complete" }
-        if fieldId == "status" { return "value:\(task.statusId)" }
-        return task.properties[fieldId].map { "value:\($0)" } ?? "unassigned"
+    public static func laneID(task: TaskItem) -> String {
+        task.completed ? "complete" : "value:\(task.statusId)"
     }
 }

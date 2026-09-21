@@ -16,7 +16,7 @@ A shared SwiftUI app for macOS 14+ and iOS 17+. Requires Xcode 16 or newer. No t
 
 3. Run the app. In **Settings**, enter `http://localhost:3000` and the matching API token, if configured. You can create tasks before connecting.
 
-Restart the updated Rust server before syncing. Migration `0012_contexts.sql` adds reusable contexts, shared contacts, and attachments. The client requires sync protocol version 6 and writes local format 8. Existing local files migrate without changing queued request IDs or bodies. Older app versions cannot open format 8.
+Restart the updated Rust server before syncing. Migration `0013_context_owned_properties.sql` deletes direct task/project custom properties and property-based boards; tasks, projects, statuses, status boards, and contexts are kept. The client requires sync protocol version 7 and writes local format 9. Local upgrades discard retired property/board edits while preserving queued task, status, and context changes. Surviving request IDs and bodies stay unchanged for safe retry, so legacy property values may remain in pending requests and server receipts, but are no longer stored on tasks or projects. Older app versions cannot open format 9. Back up the database and local file before upgrading if you need the removed values.
 
 On a physical phone, localhost means the phone itself. For trusted local development, run the API with `API_BIND=0.0.0.0:3000`, use `http://your-mac.local:3000`, and allow the local-network prompt. Find the Mac hostname with `scutil --get LocalHostName`. Use an HTTPS URL for a deployed server. The app permits plaintext HTTP only for loopback and `.local` hosts.
 
@@ -35,13 +35,13 @@ The Xcode project is checked in. If you change `project.yml`, regenerate it with
 
 Tokens live in a device-only Keychain entry scoped to the server URL. Switching servers requires an empty pending queue and replaces the downloaded cache. Local data lives at `Adhocly/state.json` in the app’s Application Support directory, inside the sandbox on installed builds. Uninstalling the app can remove unsynced data.
 
-The client supports project creation, deletion, and folder organization, but not project renaming or user accounts. Legacy project metadata remains in the API; contexts are a separate feature. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
+The client supports project creation, deletion, and folder organization, but not project renaming or user accounts. Custom fields belong to contexts, not individual projects or tasks. The legacy project metadata endpoints and task-property creation endpoint are removed. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
 
 ## Contexts
 
 Open the **Contexts & contacts** workspace from the sidebar, or the **Contexts** tab on iPhone. The Projects directory and **More actions** also link to it. Contexts and contacts have dedicated detail, creation, and editing pages. Start with a blank context, Legal matter, or Software project, then add identifier, contact, choice, text, date, link, and long-note fields. Contacts have a name, email, phone, and notes; editing a shared contact updates every reference.
 
-Open a context to see its shared fields, projects, folder attachments, and related tasks. Filter tasks by inherited context, direct attachments, or task-level overrides, then narrow by completion status or task text. Expand a task's effective values to see where each value came from. Explicit clears count as overrides, even when the resulting value matches the shared value. Inactive overrides have a separate list and do not count as tasks currently using the context. You can edit or complete tasks here, manage overrides, or open a linked project. These filters are temporary; persistent custom views are not implemented.
+Open a context to explore project cards and related tasks, or switch to Projects or Tasks only. Search both by name or task description. Expand **Filter by property** to select effective values, including inherited values, local overrides, and **Not set** for explicit clears. All selected properties must match on the same project or task; a project also appears when one of its tasks matches. Task relationship and completion filters apply only to the task list. Expand shared information or a task's context values to inspect their sources. Inactive overrides have a separate task filter and no effective property values, so clear property filters to see them. You can edit or complete tasks, manage overrides and folder attachments, or open a project. These filters are temporary; persistent custom views are not implemented.
 
 Right-click a task or project (long-press on iPhone/iPad), then choose **Attach context → context name** to attach it immediately. Direct attachments are checked and cannot be added twice; existing overrides are kept. Task menus work in lists, boards, the schedule, and context pages. Use a folder or project's **Contexts…** action to manage attachments and overrides. Tasks inherit attachments and field overrides through their folder ancestry and project. Open a saved task's editor to attach contexts or override individual fields. Turn off **Override** to inherit again; an explicitly empty value hides the inherited value. Attachment edits save separately from the task editor. Save a new task or project change before editing its attachments.
 
@@ -63,13 +63,13 @@ Right-click a task (long-press on iPhone/iPad) for **Planned date**, **Due date*
 
 ## Kanban
 
-Open **By status** in the sidebar, or use **+ → New Kanban**. A board groups all tasks by Status or by a task property. Search opens workspace-wide project and task results. Drag a card between columns, or use its menu’s **Move to** action with a keyboard, VoiceOver, or touch.
+Open **By status** in the sidebar, or use **More actions → New board**. Boards group tasks by status. Search opens workspace-wide project and task results. Drag a card between columns, or use its menu’s **Move to** action with a keyboard, VoiceOver, or touch.
 
-Use **+ → Task properties** to add choice, text, or number properties. Edit statuses there or from a status board’s **Edit statuses** action. Custom status columns are shared across boards: moving a card changes the task’s status everywhere. Choice properties use their configured options as columns; text and number properties use the distinct values assigned to tasks, plus Unassigned.
+Use **Settings → Task statuses**, **More actions → Task statuses**, or a board’s **Edit statuses** action to add, rename, reorder, or remove statuses. Status columns are shared across boards: moving a card changes the task’s status everywhere. Statuses are separate from context fields; the API retains `/api/task-fields/status` for status edits and retry compatibility.
 
-Every board has a special Complete column. Its name can change, but its identity and completion behavior cannot. Moving out reopens the task; completing a repeating task creates one successor on the server. The default status also has a permanent identity and can be renamed. Options with tasks cannot be removed until those tasks are moved elsewhere.
+Every board has a special Complete column. Its name can change, but its identity and completion behavior cannot. Moving out reopens the task; completing a repeating task creates one successor on the server. The default status also has a permanent identity and can be renamed. Statuses with tasks cannot be removed until those tasks are moved elsewhere.
 
-Board definitions, property definitions, and task changes share the durable offline queue. Configuration conflicts show both versions and require an explicit choice before replacing server configuration. Deleting a board keeps its tasks.
+Board definitions, statuses, and task changes share the durable offline queue. Configuration conflicts show both versions and require an explicit choice before replacing server configuration. Deleting a board keeps its tasks.
 
 ## Capture and reminders
 

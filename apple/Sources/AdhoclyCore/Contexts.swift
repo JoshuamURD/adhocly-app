@@ -60,6 +60,13 @@ public struct ResolvedContext: Identifiable, Sendable {
     public var context: WorkContext
     public var attachedAt: String
     public var fields: [ResolvedContextField]
+
+    /// Match effective values, including explicit clears, rather than shared defaults.
+    public func matches(propertyValues: [String: String]) -> Bool {
+        propertyValues.allSatisfy { id, value in
+            fields.contains { $0.id == id && $0.value == value }
+        }
+    }
 }
 
 public struct ResolvedContextField: Identifiable, Sendable {

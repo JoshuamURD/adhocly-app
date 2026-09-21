@@ -96,12 +96,17 @@ private struct ContextDetailView: View {
     @State private var completion = "all"
     @State private var search = ""
     @State private var attachment: ContextRequest?
+    @State private var propertyValues: [String: String] = [:]
+    @State private var scope = "all"
 
     var body: some View {
         Group {
             if let context = store.contexts.first(where: { $0.id == contextId }) {
                 content(context)
                     .navigationTitle(context.name)
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .primaryAction) {
                             NavigationLink {
@@ -121,119 +126,300 @@ private struct ContextDetailView: View {
 
     private func content(_ context: WorkContext) -> some View {
         let usage = store.contextTaskUsage(for: contextId)
-        let visible = usage.filter {
-            $0.matches(filter)
-                && (completion == "all" || $0.task.completed == (completion == "completed"))
+        let projectContexts = Dictionary(uniqueKeysWithValues: store.projects.compactMap { project in
+            store.resolvedContexts(for: "projects:\(project.id)").first { $0.id == contextId }
+                .map { (project.id, $0) }
+        })
+        let matchingTasks = usage.filter {
+            ($0.resolved?.matches(propertyValues: propertyValues) ?? propertyValues.isEmpty)
                 && (search.isEmpty || $0.task.title.localizedStandardContains(search)
                     || $0.task.details.localizedStandardContains(search) || $0.task.project.localizedStandardContains(search))
         }
+        let visible = matchingTasks.filter {
+            $0.matches(filter) && (completion == "all" || $0.task.completed == (completion == "completed"))
+        }
         let projects = store.projects.filter { project in
-            store.resolvedContexts(for: "projects:\(project.id)").contains { $0.id == contextId }
+            let resolved = projectContexts[project.id]
+            let related = resolved != nil || usage.contains { $0.task.projectId == project.id }
                 || store.contextLinks(for: "projects:\(project.id)").overrides[contextId] != nil
-                || usage.contains { $0.task.projectId == project.id }
+            let matchesProject = (resolved?.matches(propertyValues: propertyValues) ?? propertyValues.isEmpty)
+                && (search.isEmpty || project.name.localizedStandardContains(search))
+            return related && (matchesProject || matchingTasks.contains { $0.task.projectId == project.id && $0.resolved != nil })
         }
         let folders = store.folders.filter { folder in
             let links = store.contextLinks(for: "folders:\(folder.id)")
             return links.contextIds.contains(contextId) || links.overrides[contextId] != nil
         }
-        return List {
-            Section("Shared information") {
-                DisclosureGroup("\(context.fields.count) fields") {
-                    ForEach(context.fields) { field in
-                        ContextValueDisplay(store: store, field: ResolvedContextField(
-                            field: field, value: field.value, source: "Shared · \(context.name)"))
+        let effectiveContexts = Array(projectContexts.values) + usage.compactMap(\.resolved)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("CONTEXT", systemImage: "square.stack.3d.up")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(context.name).font(AppStyle.headingFont).accessibilityAddTraits(.isHeader)
+                    Text("Explore the projects and tasks that share this context.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+
+                DisclosureGroup {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .topLeading)], alignment: .leading, spacing: 20) {
+                        ForEach(context.fields) { field in
+                            ContextValueDisplay(store: store, field: ResolvedContextField(
+                                field: field, value: field.value, source: "Shared · \(context.name)"))
+                        }
                     }
-                    if context.fields.isEmpty { Text("Add fields with Edit context.").foregroundStyle(.secondary) }
+                    .padding(.top, 16)
+                    if context.fields.isEmpty { Text("Add properties with Edit context.").foregroundStyle(.secondary) }
+                } label: {
+                    Label("Shared information · \(context.fields.count) properties", systemImage: "info.circle")
+                        .font(.subheadline.weight(.medium))
                 }
-            }
-            Section("Tasks (\(visible.count))") {
-                Picker("Relationship", selection: $filter) {
-                    ForEach(ContextTaskFilter.allCases, id: \.self) { value in
-                        Text("\(value.rawValue) (\(usage.filter { $0.matches(value) }.count))").tag(value)
-                    }
+                .padding(20)
+                .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.cardRadius))
+
+                filters(context, resolved: effectiveContexts)
+
+                Picker("Explore", selection: $scope) {
+                    Text("All work").tag("all")
+                    Text("Projects (\(projects.count))").tag("projects")
+                    Text("Tasks (\(visible.count))").tag("tasks")
                 }
-                .accessibilityIdentifier("context-task-filter")
-                Picker("Status", selection: $completion) {
-                    Text("All statuses").tag("all")
-                    Text("To do").tag("active")
-                    Text("Completed").tag("completed")
-                }
-                TextField("Filter tasks in this context", text: $search)
-                    .accessibilityLabel("Filter tasks in this context")
-                if filter == .inactive {
-                    Text("These tasks retain local overrides but no longer use this context. Reattach it or remove the overrides from the task.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(visible) { item in taskRow(item) }
-                if visible.isEmpty {
-                    Text("No tasks match these filters.").foregroundStyle(.secondary)
-                }
-            }
-            Section("Projects (\(projects.count))") {
-                ForEach(projects) { project in
-                    let owner = "projects:\(project.id)"
-                    let resolved = store.resolvedContexts(for: owner).first { $0.id == contextId }
-                    HStack {
-                        Button { openProject(project.id) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label(project.name, systemImage: "folder")
-                                Text(resolved?.attachedAt ?? "Referenced by tasks or inactive overrides")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                Text("\(usage.filter { $0.task.projectId == project.id && $0.resolved != nil }.count) tasks using this context")
-                                    .font(.caption).foregroundStyle(.secondary)
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 520)
+                .accessibilityIdentifier("context-explore-scope")
+
+                if scope != "tasks" {
+                    VStack(alignment: .leading, spacing: 16) {
+                        sectionHeading("Projects", count: projects.count)
+                        Text("Projects matching directly or through a task. Task status and relationship filters apply only below.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), alignment: .top)], spacing: 16) {
+                            ForEach(projects) { project in
+                                projectCard(project, resolved: projectContexts[project.id], usage: usage)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open project \(project.name)")
-                        Button { attachment = ContextRequest(id: owner, title: project.name) } label: { Image(systemName: "slider.horizontal.3") }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Manage contexts for \(project.name)")
+                        if projects.isEmpty {
+                            emptyResults("No matching projects", description: "Try another property value or a broader search.")
+                        }
                     }
                 }
-                if projects.isEmpty { Text("No projects use this context.").foregroundStyle(.secondary) }
+                if scope != "projects" {
+                    VStack(alignment: .leading, spacing: 16) {
+                        sectionHeading("Tasks", count: visible.count)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), alignment: .leading)], spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Relationship").font(.caption).foregroundStyle(.secondary)
+                                Picker("Relationship", selection: $filter) {
+                                    ForEach(ContextTaskFilter.allCases, id: \.self) { value in
+                                        Text("\(value.rawValue) (\(matchingTasks.filter { $0.matches(value) }.count))").tag(value)
+                                    }
+                                }
+                                .accessibilityIdentifier("context-task-filter")
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Status").font(.caption).foregroundStyle(.secondary)
+                                Picker("Status", selection: $completion) {
+                                    Text("All statuses").tag("all")
+                                    Text("To do").tag("active")
+                                    Text("Completed").tag("completed")
+                                }
+                            }
+                        }
+                        .labelsHidden().pickerStyle(.menu)
+                        if filter == .inactive {
+                            Text("These tasks keep local overrides but no longer use this context. They have no effective property values, so clear property filters to see them.")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                        LazyVStack(spacing: 12) {
+                            ForEach(visible) { item in taskRow(item) }
+                        }
+                        if visible.isEmpty {
+                            emptyResults("No matching tasks", description: "Try changing the properties, relationship or status.")
+                        }
+                    }
+                }
+                if !folders.isEmpty {
+                    Divider()
+                    DisclosureGroup("Folder attachments & overrides · \(folders.count)") {
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(folders) { folder in
+                                Button { attachment = ContextRequest(id: "folders:\(folder.id)", title: store.folderPath(folder.id)) } label: {
+                                    Label(store.folderPath(folder.id), systemImage: "folder")
+                                }
+                            }
+                        }
+                        .padding(.top, 16)
+                    }
+                    .foregroundStyle(.secondary)
+                }
             }
-            if !folders.isEmpty {
-                Section("Folder attachments & overrides") {
-                    ForEach(folders) { folder in
-                        Button { attachment = ContextRequest(id: "folders:\(folder.id)", title: store.folderPath(folder.id)) } label: {
-                            Label(store.folderPath(folder.id), systemImage: "folder")
+            .padding(24)
+            .frame(maxWidth: 1200, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .background(AppStyle.canvas)
+        .refreshable { await model.sync() }
+        .onChange(of: context.fields.map(\.id)) { _, ids in
+            propertyValues = propertyValues.filter { ids.contains($0.key) }
+        }
+    }
+
+    private func filters(_ context: WorkContext, resolved: [ResolvedContext]) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Label("Filter work", systemImage: "line.3.horizontal.decrease").font(.headline)
+                Spacer()
+                if !propertyValues.isEmpty || !search.isEmpty || filter != .all || completion != "all" {
+                    Button("Clear filters") {
+                        propertyValues = [:]; search = ""; filter = .all; completion = "all"
+                    }
+                    .accessibilityIdentifier("clear-context-filters")
+                }
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search projects and tasks", text: $search)
+                    .textFieldStyle(.plain)
+                    .accessibilityLabel("Search projects and tasks in this context")
+                    .accessibilityIdentifier("context-work-search")
+            }
+            .padding(12)
+            .background(AppStyle.canvas, in: RoundedRectangle(cornerRadius: 8))
+            if !context.fields.isEmpty {
+                DisclosureGroup {
+                    Text("Values include inherited and local overrides. All selected properties must match.")
+                        .font(.caption).foregroundStyle(.secondary).padding(.vertical, 12)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .leading)], spacing: 20) {
+                        ForEach(context.fields) { field in
+                            let values = propertyOptions(field, resolved: resolved)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(field.name).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                Picker(field.name, selection: Binding<String?>(
+                                    get: { propertyValues[field.id] }, set: { propertyValues[field.id] = $0 }
+                                )) {
+                                    Text("Any value").tag(String?.none)
+                                    ForEach(values, id: \.self) { value in
+                                        Text(value.isEmpty ? "Not set" : String(store.contextValue(field, value: value).prefix(100)))
+                                            .tag(Optional(value))
+                                    }
+                                }
+                                .labelsHidden().pickerStyle(.menu)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityIdentifier("context-property-filter-\(field.id)")
+                            }
                         }
                     }
+                } label: {
+                    Text(propertyValues.isEmpty ? "Filter by property" : "Filter by property · \(propertyValues.count) active")
+                        .font(.subheadline.weight(.medium))
                 }
+                .accessibilityIdentifier("context-property-filters")
             }
         }
-        .refreshable { await model.sync() }
+        .padding(20)
+        .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.cardRadius))
+        .overlay { RoundedRectangle(cornerRadius: AppStyle.cardRadius).strokeBorder(AppStyle.border).allowsHitTesting(false) }
+    }
+
+    private func propertyOptions(_ field: ContextField, resolved: [ResolvedContext]) -> [String] {
+        var values = Set(resolved.compactMap { $0.fields.first { $0.id == field.id }?.value })
+        values.insert(field.value)
+        if let selected = propertyValues[field.id] { values.insert(selected) }
+        return values.sorted {
+            store.contextValue(field, value: $0).localizedStandardCompare(store.contextValue(field, value: $1)) == .orderedAscending
+        }
+    }
+
+    private func sectionHeading(_ title: String, count: Int) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
+            Text(count.formatted()).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    private func emptyResults(_ title: String, description: String) -> some View {
+        ContentUnavailableView(title, systemImage: "line.3.horizontal.decrease", description: Text(description))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+    }
+
+    private func projectCard(_ project: Project, resolved: ResolvedContext?, usage: [ContextTaskUsage]) -> some View {
+        let tasks = usage.filter { $0.task.projectId == project.id && $0.resolved != nil }
+        return VStack(alignment: .leading, spacing: 18) {
+            Button { openProject(project.id) } label: {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        WorkspaceIcon(symbol: "folder")
+                        Spacer()
+                        Image(systemName: "arrow.up.right").foregroundStyle(.secondary)
+                    }
+                    Text(project.name).font(.title3.weight(.semibold))
+                    Text(resolved?.attachedAt ?? (tasks.isEmpty ? "Inactive overrides" : "Context used by tasks"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open project \(project.name)")
+            Divider()
+            HStack {
+                Text("\(tasks.filter { !$0.task.completed }.count) to do · \(tasks.filter { $0.task.completed }.count) completed")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button { attachment = ContextRequest(id: "projects:\(project.id)", title: project.name) } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Manage contexts for \(project.name)")
+                .help("Manage project contexts")
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.cardRadius))
+        .overlay { RoundedRectangle(cornerRadius: AppStyle.cardRadius).strokeBorder(AppStyle.border).allowsHitTesting(false) }
     }
 
     private func taskRow(_ usage: ContextTaskUsage) -> some View {
         let task = usage.task
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
                 Button { model.perform { try store.toggle(task.id) } } label: {
                     Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(task.completed ? Color.accentColor : Color.secondary)
                         .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(task.completed ? "Mark \(task.title) incomplete" : "Complete \(task.title)")
                 TaskQuickEdit(model: model, store: store, task: task, editDetails: editTask) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(task.title).strikethrough(task.completed)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(task.title).font(.body.weight(.medium)).strikethrough(task.completed)
                         Text("\(task.project) · \(store.statusName(task.statusId))")
                             .font(.caption).foregroundStyle(.secondary)
+                        if !task.details.isEmpty {
+                            Text(task.details).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        if let due = task.dueOn { TaskDateLabel(value: due, isDue: true, completed: task.completed) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
             }
             if let resolved = usage.resolved {
-                Text(usage.isInherited ? "Inherited · \(resolved.attachedAt)\(usage.isDirect ? " · Also attached to task" : "")" : "Attached to task")
-                    .font(.caption).foregroundStyle(.secondary)
-                DisclosureGroup("Effective context values") {
-                    ForEach(resolved.fields) { field in ContextValueDisplay(store: store, field: field) }
+                DisclosureGroup {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .topLeading)], alignment: .leading, spacing: 20) {
+                        ForEach(resolved.fields) { field in ContextValueDisplay(store: store, field: field) }
+                    }
+                    .padding(.top, 12)
+                } label: {
+                    Text(usage.isInherited ? "Inherited · \(resolved.attachedAt)\(usage.isDirect ? " · Also attached to task" : "")" : "Attached to task")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .font(.callout)
+                .accessibilityLabel("Effective context values for \(task.title)")
             }
             if !usage.overriddenFields.isEmpty {
                 Text("\(usage.resolved == nil ? "Inactive overrides" : "Task overrides"): \(usage.overriddenFields.map(\.name).joined(separator: ", "))")
@@ -242,7 +428,9 @@ private struct ContextDetailView: View {
                     .buttonStyle(.borderless)
             }
         }
-        .padding(.vertical, 4)
+        .padding(20)
+        .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.cardRadius))
+        .overlay { RoundedRectangle(cornerRadius: AppStyle.cardRadius).strokeBorder(AppStyle.border).allowsHitTesting(false) }
     }
 }
 

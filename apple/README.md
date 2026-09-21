@@ -16,7 +16,7 @@ A shared SwiftUI app for macOS 14+ and iOS 17+. Requires Xcode 16 or newer. No t
 
 3. Run the app. In **Settings**, enter `http://localhost:3000` and the matching API token, if configured. You can create tasks before connecting.
 
-Restart the updated Rust server before syncing. Migration `0011_task_details.sql` adds task descriptions. The client requires sync protocol version 5 so an older server cannot silently discard descriptions or unit-based reminders. Existing local files migrate without changing queued request IDs or bodies.
+Restart the updated Rust server before syncing. Migration `0011_task_details.sql` adds task descriptions. The client requires sync protocol version 5 so an older server cannot silently discard descriptions or unit-based reminders. Existing local files migrate to local format 6 without changing queued request IDs or bodies. Older app versions cannot open format 6, which adds pending project creation.
 
 On a physical phone, localhost means the phone itself. For trusted local development, run the API with `API_BIND=0.0.0.0:3000`, use `http://your-mac.local:3000`, and allow the local-network prompt. Find the Mac hostname with `scutil --get LocalHostName`. Use an HTTPS URL for a deployed server. The app permits plaintext HTTP only for loopback and `.local` hosts.
 
@@ -26,7 +26,7 @@ The Xcode project is checked in. If you change `project.yml`, regenerate it with
 
 ## Tasks and sync
 
-- Create, edit, complete, reopen, and delete tasks offline. Add a multiline description in **Details**. Task lists and boards show a short preview and the calendar days until due (or days overdue). Set planned/due times and weekly recurrence. Choose from the server’s projects, with Inbox available before the first connection.
+- Create, edit, complete, reopen, and delete tasks offline. Add a multiline description in **Details**. Task lists and boards show a short preview and the calendar days until due (or days overdue). Set planned/due times and weekly recurrence. Create projects offline with **New project** in the Projects list, sidebar, or task editor. Inbox is available before the first connection.
 - Each change reaches an atomic local file before appearing as saved. The same file holds the downloaded snapshot and pending operations. Closing the app preserves the queue; unreadable files cause a recovery error, not a reset.
 - Sync runs after changes, on app activation, on manual refresh, and every 15 seconds while active. iOS can suspend the app in the background; pending work resumes when you reopen it.
 - Requests use `GET /api/sync` and `POST /api/sync`, with the server’s existing entity revisions and durable mutation receipts. Retries retain their operation IDs and bodies, including after a lost response or restart. Native and non-Apple clients use the same Rust protocol.
@@ -35,7 +35,7 @@ The Xcode project is checked in. If you change `project.yml`, regenerate it with
 
 Tokens live in a device-only Keychain entry scoped to the server URL. Switching servers requires an empty pending queue and replaces the downloaded cache. Local data lives at `Adhocly/state.json` in the app’s Application Support directory, inside the sandbox on installed builds. Uninstalling the app can remove unsynced data.
 
-The client reads projects but does not manage projects, folders, project-level metadata, or user accounts. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
+The client creates projects but does not yet rename or delete them, or manage folders, project-level metadata, or user accounts. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
 
 ## Kanban
 
@@ -57,7 +57,7 @@ Book dentist !two weeks from now
 Prepare slides @in three days at 14:30 /"Work projects"
 ```
 
-`!` sets the due date; `@` sets the planned date; `/` selects an existing project by name. Dates are interpreted offline, and the preview shows the resolved dates before saving. The default time is 9am; change it under **Settings → Capture and reminders** on each device. Explicit times take precedence.
+`!` sets the due date; `@` sets the planned date; `/` suggests matching projects as you type. Select a suggestion to complete the name. If the name is new, **Add** opens a prefilled **New project** modal. **Create & add task** saves both together, even offline; **Cancel** leaves the capture text unchanged. Dates are interpreted offline, and the preview shows the resolved dates before saving. The default time is 9am; change it under **Settings → Capture and reminders** on each device. Explicit times take precedence.
 
 The English parser handles today/tomorrow, weekday names, numeric or common word-number offsets in minutes, hours, days, weeks, months, and years, ISO dates, and Apple-detected absolute dates. `Monday 9am` means the next future occurrence; `next Monday` skips today if today is Monday. Calendar arithmetic preserves wall-clock time across daylight-saving changes. Unsupported or partially parsed phrases remain in the input and prevent saving. Quotes support project names containing spaces or prefix characters; `\!`, `\@`, and `\/` keep literal prefixes in a title. Email addresses and URLs are not commands.
 

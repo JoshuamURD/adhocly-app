@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		11C8551F6E7D618B3B0E4616 /* ScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B04EB378CEDBDB105C7C36 /* ScheduleView.swift */; };
 		14929AA7E6797F1983984F78 /* TaskEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */; };
 		2B83F7C1654CF5D0FC030ED7 /* BoardSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE15E50FF76E2DB3B027E337 /* BoardSettingsView.swift */; };
 		37605BA153D5B8851B090CFD /* AdhoclyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C11DE3299AB7A1B3B76C2A9 /* AdhoclyApp.swift */; };
@@ -18,6 +19,7 @@
 		963A95D76903A6CE9DCA82CF /* AppStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D702CFFF61AB848257356 /* AppStyle.swift */; };
 		9A9354E970A075730A17C3EE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */; };
 		ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */; };
+		C48BEBF4C3568FE91602FB8F /* ProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9198A3830090CE7C9B8EE5F /* ProjectEditorView.swift */; };
 		CC67898B65155639D554C4BF /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */; };
 /* End PBXBuildFile section */
 
@@ -30,6 +32,7 @@
 		63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
 		7D30FF224100AB7BE66F3C51 /* Adhocly-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-macOS.entitlements"; sourceTree = "<group>"; };
 		7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		82B04EB378CEDBDB105C7C36 /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleView.swift; sourceTree = "<group>"; };
 		A485208530742026EBDB35D0 /* CaptureBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureBar.swift; sourceTree = "<group>"; };
 		A57D702CFFF61AB848257356 /* AppStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStyle.swift; sourceTree = "<group>"; };
 		BB2169C61190668ED60A2517 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
@@ -38,6 +41,7 @@
 		C78489681480BA967161E1B5 /* apple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = apple; path = .; sourceTree = SOURCE_ROOT; };
 		CE15E50FF76E2DB3B027E337 /* BoardSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSettingsView.swift; sourceTree = "<group>"; };
 		E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEditorView.swift; sourceTree = "<group>"; };
+		F9198A3830090CE7C9B8EE5F /* ProjectEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,7 +87,9 @@
 				30C50F6A897117BEC2260E3A /* Credentials.swift */,
 				429359F26B5CD814761E1B46 /* Info.plist */,
 				00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */,
+				F9198A3830090CE7C9B8EE5F /* ProjectEditorView.swift */,
 				BB2169C61190668ED60A2517 /* ReminderScheduler.swift */,
+				82B04EB378CEDBDB105C7C36 /* ScheduleView.swift */,
 				E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */,
 				63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */,
 			);
@@ -180,7 +186,9 @@
 				ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */,
 				56C743B81AE3DDED76A81190 /* Credentials.swift in Sources */,
 				CC67898B65155639D554C4BF /* KanbanView.swift in Sources */,
+				C48BEBF4C3568FE91602FB8F /* ProjectEditorView.swift in Sources */,
 				56E3AB826CFCD5A8AAE20573 /* ReminderScheduler.swift in Sources */,
+				11C8551F6E7D618B3B0E4616 /* ScheduleView.swift in Sources */,
 				14929AA7E6797F1983984F78 /* TaskEditorView.swift in Sources */,
 				819A01BE8B2D18AF63E6CE6A /* TaskListView.swift in Sources */,
 			);

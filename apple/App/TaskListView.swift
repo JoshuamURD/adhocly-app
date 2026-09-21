@@ -19,10 +19,15 @@ struct TaskListView: View {
     @State private var selection: String? = "active"
     @State private var taskFilter = "active"
     @State private var search = ""
+    @State private var today = Date()
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("todaySort") private var todaySort = TodayTaskOrder.due
+    @AppStorage("todayGrouping") private var todayGrouping = ""
     @State private var editor: EditorRequest?
     @State private var showConnection = false
     @State private var showReview = false
     @State private var showProperties = false
+    @State private var showNewProject = false
     @State private var boardEditor: BoardRequest?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -34,7 +39,8 @@ struct TaskListView: View {
     }
 
     private func tasks(for scope: String) -> [TaskItem] {
-        store.tasks.filter { task in
+        let scopedTasks = scope == "today" ? TodayTasks.matching(store.tasks, now: today) : store.tasks
+        return scopedTasks.filter { task in
             let matches: Bool
             switch scope {
             case "active": matches = !task.completed
@@ -54,7 +60,8 @@ struct TaskListView: View {
         if scope.hasPrefix("project:") {
             return store.projects.first { $0.id == String(scope.dropFirst(8)) }?.name ?? "Project"
         }
-        return scope == "completed" ? "Completed" : scope == "all" ? "All tasks" : "To do"
+        if scope == "schedule" { return "Schedule" }
+        return scope == "today" ? "Today" : scope == "completed" ? "Completed" : scope == "all" ? "All tasks" : "To do"
     }
 
     private func newTask(in scope: String) -> TaskItem {
@@ -75,12 +82,22 @@ struct TaskListView: View {
             #endif
         }
         .tint(.accentColor)
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { today = Date() }
+        }
         .sheet(item: $editor) { request in
             TaskEditorView(model: model, store: store, draft: request.draft, original: request.original)
         }
         .sheet(isPresented: $showConnection) { ConnectionView(model: model, store: store) }
         .sheet(isPresented: $showReview) { SyncReviewView(model: model, store: store) }
         .sheet(isPresented: $showProperties) { PropertiesView(model: model, store: store) }
+        .sheet(isPresented: $showNewProject) {
+            ProjectEditorView { name in
+                try store.createProject(named: name)
+                model.didSave()
+            }
+        }
         .sheet(item: $boardEditor) { request in
             BoardEditorView(model: model, store: store, draft: request.draft, original: request.original)
         }
@@ -90,6 +107,9 @@ struct TaskListView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("Workspace") {
+                    sidebarLink("Today", symbol: "sun.max", scope: "today", count: TodayTasks.matching(store.tasks, now: today).count)
+                    NavigationLink(value: "schedule") { Label("Schedule", systemImage: "calendar") }
+                        .tag("schedule")
                     sidebarLink("To do", symbol: "checklist", scope: "active", count: store.tasks.filter { !$0.completed }.count)
                     sidebarLink("All tasks", symbol: "tray.full", scope: "all", count: store.tasks.count)
                     sidebarLink("Completed", symbol: "checkmark.circle", scope: "completed", count: store.tasks.filter(\.completed).count)
@@ -99,7 +119,10 @@ struct TaskListView: View {
                     Button("New board", systemImage: "plus") { createBoard() }
                         .foregroundStyle(.secondary)
                 }
-                Section("Projects") { projectLinks }
+                Section("Projects") {
+                    projectLinks
+                    Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
+                }
             }
             .listStyle(.sidebar)
             .navigationTitle("Adhocly")
@@ -130,6 +153,10 @@ struct TaskListView: View {
                 workspace(taskFilter, showFilter: true)
             }
             .tabItem { Label("Tasks", systemImage: "checklist") }
+            NavigationStack {
+                workspace("schedule")
+            }
+            .tabItem { Label("Schedule", systemImage: "calendar") }
             NavigationStack {
                 directory(isBoards: true)
                     .navigationDestination(for: String.self) { workspace($0) }
@@ -200,11 +227,9 @@ struct TaskListView: View {
                         }
                         .listRowBackground(AppStyle.surface)
                     }
-                    Section {
-                        Text("Projects come from your server. Until you connect, Inbox keeps everything in one place.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .listRowBackground(Color.clear)
-                    }
+                    Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
+                        .frame(minHeight: 44)
+                        .listRowBackground(AppStyle.surface)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -234,10 +259,13 @@ struct TaskListView: View {
         let visibleTasks = tasks(for: scope)
         let selectedBoard = board(for: scope)
         return VStack(spacing: 0) {
-            WorkspaceHeading(title: title(for: scope), subtitle: subtitle(for: scope, count: visibleTasks.count))
+            if scope != "schedule" {
+                WorkspaceHeading(title: title(for: scope), subtitle: subtitle(for: scope, count: visibleTasks.count))
+            }
             if showFilter {
                 Picker("Show tasks", selection: $taskFilter) {
                     Text("To do").tag("active")
+                    Text("Today").tag("today")
                     Text("All").tag("all")
                     Text("Completed").tag("completed")
                 }
@@ -245,7 +273,12 @@ struct TaskListView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
             }
-            if let selectedBoard, let field = store.taskFields.first(where: { $0.id == selectedBoard.fieldId }) {
+            if scope == "today" { todayControls }
+            if scope == "schedule" {
+                ScheduleView(tasks: visibleTasks,
+                             editTask: { editor = EditorRequest(draft: $0, original: $0) },
+                             toggleTask: { task in model.perform { try store.toggle(task.id) } })
+            } else if let selectedBoard, let field = store.taskFields.first(where: { $0.id == selectedBoard.fieldId }) {
                 KanbanView(model: model, store: store, board: selectedBoard, field: field, tasks: visibleTasks,
                            editTask: { editor = EditorRequest(draft: $0, original: $0) },
                            addTask: { editor = EditorRequest(draft: $0, original: nil) })
@@ -272,6 +305,7 @@ struct TaskListView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
                     Button("New board", systemImage: "rectangle.split.3x1") { createBoard() }
                     Button("Task properties", systemImage: "tag") { showProperties = true }
                     if let selectedBoard { boardActions(selectedBoard) }
@@ -289,6 +323,7 @@ struct TaskListView: View {
         if !search.isEmpty { return "\(count) matching \(count == 1 ? "task" : "tasks")" }
         if board(for: scope) != nil { return "Move work forward, one card at a time." }
         if scope == "completed" { return "A record of what you’ve taken care of." }
+        if scope == "today" { return "\(count) \(count == 1 ? "task" : "tasks") planned or due today." }
         return count == 0 ? "Make room for your next idea." : "\(count) \(count == 1 ? "task" : "tasks") · One thing at a time."
     }
 
@@ -306,21 +341,73 @@ struct TaskListView: View {
         }
     }
 
+    private var todayControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack { todaySortMenu; todayGroupMenu; Spacer() }
+            VStack(alignment: .leading) { todaySortMenu; todayGroupMenu }
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+    }
+
+    private var todaySortMenu: some View {
+        Menu {
+            Picker("Sort by", selection: $todaySort) {
+                ForEach(TodayTaskOrder.allCases, id: \.self) { Text($0.name).tag($0) }
+            }
+        } label: {
+            Label("Sort: \(todaySort.name)", systemImage: "arrow.up.arrow.down")
+        }
+        .accessibilityIdentifier("today-sort")
+    }
+
+    private var todayGroupMenu: some View {
+        Menu {
+            Picker("Group by", selection: $todayGrouping) {
+                Text("None").tag("")
+                ForEach(TodayTaskOrder.allCases, id: \.self) { Text($0.name).tag($0.rawValue) }
+            }
+        } label: {
+            Label("Group: \(TodayTaskOrder(rawValue: todayGrouping)?.name ?? "None")", systemImage: "rectangle.3.group")
+        }
+        .accessibilityIdentifier("today-group")
+    }
+
+    private func taskRows(_ tasks: [TaskItem]) -> some View {
+        ForEach(tasks) { task in
+            taskRow(task)
+                .listRowBackground(AppStyle.surface)
+                .listRowSeparatorTint(AppStyle.border)
+                .swipeActions {
+                    Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
+                    Button("Edit") { editor = EditorRequest(draft: task, original: task) }
+                }
+                .contextMenu {
+                    Button("Edit") { editor = EditorRequest(draft: task, original: task) }
+                    Button(task.completed ? "Mark incomplete" : "Complete") { model.perform { try store.toggle(task.id) } }
+                    Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
+                }
+        }
+    }
+
     private func taskList(_ tasks: [TaskItem], scope: String) -> some View {
         List {
-            ForEach(tasks) { task in
-                taskRow(task)
-                    .listRowBackground(AppStyle.surface)
-                    .listRowSeparatorTint(AppStyle.border)
-                    .swipeActions {
-                        Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
-                        Button("Edit") { editor = EditorRequest(draft: task, original: task) }
+            if scope == "today", let grouping = TodayTaskOrder(rawValue: todayGrouping) {
+                ForEach(TodayTasks.groups(tasks, by: grouping, sort: todaySort, statuses: store.statusField.options)) { group in
+                    Section {
+                        taskRows(group.tasks)
+                    } header: {
+                        HStack {
+                            Text(group.name)
+                            Spacer()
+                            Text("\(group.tasks.count)").monospacedDigit()
+                        }
                     }
-                    .contextMenu {
-                        Button("Edit") { editor = EditorRequest(draft: task, original: task) }
-                        Button(task.completed ? "Mark incomplete" : "Complete") { model.perform { try store.toggle(task.id) } }
-                        Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
-                    }
+                }
+            } else {
+                taskRows(scope == "today" ? TodayTasks.sorted(tasks, by: todaySort, statuses: store.statusField.options) : tasks)
             }
         }
         .listStyle(.inset)
@@ -329,11 +416,11 @@ struct TaskListView: View {
         .overlay {
             if tasks.isEmpty {
                 ContentUnavailableView {
-                    Label(search.isEmpty ? (scope == "completed" ? "Good things take a first step" : "A little room to think") : "No matching tasks",
+                    Label(search.isEmpty ? (scope == "today" ? "Nothing planned or due today" : scope == "completed" ? "Good things take a first step" : "A little room to think") : "No matching tasks",
                           systemImage: search.isEmpty ? "leaf" : "magnifyingglass")
                         .foregroundStyle(Color.accentColor)
                 } description: {
-                    Text(search.isEmpty ? (scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail.") : "Try another title, detail, or project name.")
+                    Text(search.isEmpty ? (scope == "today" ? "Tasks with a planned or due date today will appear here. Use @today or !today in quick capture." : scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail.") : "Try another title, detail, or project name.")
                 } actions: {
                     if search.isEmpty && scope != "completed" {
                         Button("Create a task") { editor = EditorRequest(draft: newTask(in: scope), original: nil) }

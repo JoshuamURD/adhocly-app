@@ -5,6 +5,7 @@ public struct CaptureResult: Equatable, Sendable {
     public let hasDueDate: Bool
     public let hasPlannedDate: Bool
     public let hasProject: Bool
+    public let projectToCreate: Project?
 }
 
 /// Prefixes occupy the suffix of a capture: title !due phrase @planned phrase /project name.
@@ -13,7 +14,45 @@ public struct CaptureResult: Equatable, Sendable {
 public enum Capture {
     public static func parse(_ input: String, projects: [Project], defaultProjectId: String = "inbox",
                              now: Date = Date(), defaultHour: Int = 9, defaultMinute: Int = 0,
-                             calendar: Calendar = .current) throws -> CaptureResult {
+                             calendar: Calendar = .current, allowNewProject: Bool = false) throws -> CaptureResult {
+        let (markers, quoted) = commandMarkers(in: input)
+        guard !quoted else { throw AppFailure("Close the quoted text before saving.") }
+        let title = unescape(String(input[..<(markers.first ?? input.endIndex)])).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { throw AppFailure("Start with a task title, followed by !due, @planned or /project.") }
+        var task = TaskItem(title: title, projectId: defaultProjectId,
+                            project: projects.first { $0.id == defaultProjectId }?.name ?? "Inbox")
+        var projectToCreate: Project?
+        var used = Set<Character>()
+        for (offset, index) in markers.enumerated() {
+            let marker = input[index]
+            guard used.insert(marker).inserted else { throw AppFailure("Use \(marker) only once per task.") }
+            let end = offset + 1 < markers.count ? markers[offset + 1] : input.endIndex
+            let phrase = projectPhrase(String(input[input.index(after: index)..<end]))
+            guard !phrase.isEmpty else { throw AppFailure("Add a value after \(marker).") }
+            if marker == "/" {
+                let exact = projects.filter { $0.name == phrase }
+                let matches = exact.isEmpty ? projects.filter { $0.name.compare(phrase, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame } : exact
+                let project: Project
+                if matches.isEmpty, allowNewProject {
+                    project = Project(id: UUID().uuidString.lowercased(), name: phrase)
+                    projectToCreate = project
+                } else {
+                    guard matches.count == 1 else { throw AppFailure("Choose an existing, unambiguous project after /: “\(phrase)”.") }
+                    project = matches[0]
+                }
+                task.projectId = project.id
+                task.project = project.name
+            } else {
+                let date = try NaturalDate.parse(phrase, now: now, defaultHour: defaultHour, defaultMinute: defaultMinute, calendar: calendar)
+                let value = LocalDateTime.string(from: date, calendar: calendar)
+                if marker == "!" { task.dueOn = value } else { task.plannedFor = value }
+            }
+        }
+        return CaptureResult(task: task, hasDueDate: used.contains("!"), hasPlannedDate: used.contains("@"),
+                             hasProject: used.contains("/"), projectToCreate: projectToCreate)
+    }
+
+    private static func commandMarkers(in input: String) -> ([String.Index], Bool) {
         var markers: [String.Index] = []
         var quoted = false
         var escaped = false
@@ -27,33 +66,39 @@ public enum Capture {
                 markers.append(index)
             }
         }
-        guard !quoted else { throw AppFailure("Close the quoted text before saving.") }
-        let title = unescape(String(input[..<(markers.first ?? input.endIndex)])).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { throw AppFailure("Start with a task title, followed by !due, @planned or /project.") }
-        var task = TaskItem(title: title, projectId: defaultProjectId,
-                            project: projects.first { $0.id == defaultProjectId }?.name ?? "Inbox")
-        var used = Set<Character>()
-        for (offset, index) in markers.enumerated() {
-            let marker = input[index]
-            guard used.insert(marker).inserted else { throw AppFailure("Use \(marker) only once per task.") }
-            let end = offset + 1 < markers.count ? markers[offset + 1] : input.endIndex
-            var phrase = String(input[input.index(after: index)..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if phrase.hasPrefix("\""), phrase.hasSuffix("\""), phrase.count >= 2 { phrase.removeFirst(); phrase.removeLast() }
-            phrase = unescape(phrase)
-            guard !phrase.isEmpty else { throw AppFailure("Add a value after \(marker).") }
-            if marker == "/" {
-                let exact = projects.filter { $0.name == phrase }
-                let matches = exact.isEmpty ? projects.filter { $0.name.compare(phrase, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame } : exact
-                guard matches.count == 1 else { throw AppFailure("Choose an existing, unambiguous project after /: “\(phrase)”.") }
-                task.projectId = matches[0].id
-                task.project = matches[0].name
-            } else {
-                let date = try NaturalDate.parse(phrase, now: now, defaultHour: defaultHour, defaultMinute: defaultMinute, calendar: calendar)
-                let value = LocalDateTime.string(from: date, calendar: calendar)
-                if marker == "!" { task.dueOn = value } else { task.plannedFor = value }
-            }
+        return (markers, quoted)
+    }
+
+    private static func projectRange(in input: String) -> Range<String.Index>? {
+        let (markers, _) = commandMarkers(in: input)
+        let slashes = markers.filter { input[$0] == "/" }
+        guard slashes.count == 1, let start = slashes.first else { return nil }
+        return input.index(after: start)..<(markers.first { $0 > start } ?? input.endIndex)
+    }
+
+    private static func projectPhrase(_ value: String) -> String {
+        var phrase = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if phrase.hasPrefix("\""), phrase.hasSuffix("\""), phrase.count >= 2 {
+            phrase.removeFirst(); phrase.removeLast()
         }
-        return CaptureResult(task: task, hasDueDate: used.contains("!"), hasPlannedDate: used.contains("@"), hasProject: used.contains("/"))
+        return unescape(phrase)
+    }
+
+    public static func projectSuggestions(in input: String, projects: [Project]) -> [Project] {
+        guard let range = projectRange(in: input) else { return [] }
+        var value = String(input[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if commandMarkers(in: input).1, value.hasPrefix("\"") { value.removeFirst() }
+        let query = projectPhrase(value)
+        return projects.filter {
+            query.isEmpty || $0.name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
+    public static func completingProject(in input: String, with project: Project) -> String {
+        guard let range = projectRange(in: input) else { return input }
+        let name = project.name.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return input.replacingCharacters(in: range, with: "\"\(name)\"" + (range.upperBound == input.endIndex ? "" : " "))
     }
 
     private static func unescape(_ text: String) -> String {

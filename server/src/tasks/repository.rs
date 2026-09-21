@@ -190,15 +190,20 @@ impl SqliteTaskRepository {
                 // SQLite normalizes impossible dates; require an exact wall-clock round trip.
                 let normalized: Option<String> = sqlx::query_scalar("SELECT strftime('%Y-%m-%dT%H:%M', ?)")
                     .bind(at).fetch_one(&mut *conn).await?;
-                if at.len() != 16 || (reminder.offset_minutes.is_some() || reminder.offset_unit.is_some() || reminder.offset_value.is_some()) || normalized.as_deref() != Some(at) {
+                if at.len() != 16
+                    || reminder.offset_minutes.is_some()
+                    || reminder.offset_unit.is_some()
+                    || reminder.offset_value.is_some()
+                    || normalized.as_deref() != Some(at)
+                {
                     return Err(AppError::Invalid("custom reminders need a valid YYYY-MM-DDTHH:MM date and no offset"));
                 }
             } else {
-                let valid_offset = match (&reminder.offset_unit, reminder.offset_value, reminder.offset_minutes) {
-                    (Some(_), Some(1..=999), None) => true,
-                    (None, None, Some(5 | 15 | 30 | 60 | 120 | 1440 | 2880 | 10080)) => true,
-                    _ => false,
-                };
+                let valid_offset = matches!(
+                    (&reminder.offset_unit, reminder.offset_value, reminder.offset_minutes),
+                    (Some(_), Some(1..=999), None)
+                        | (None, None, Some(5 | 15 | 30 | 60 | 120 | 1440 | 2880 | 10080))
+                );
                 if reminder.at.is_some() || !valid_offset {
                     return Err(AppError::Invalid("relative reminders need a unit and amount from 1 to 999 (or a legacy preset), and no fixed date"));
                 }

@@ -14,7 +14,7 @@ public final class TaskStore {
         self.session = session
         if FileManager.default.fileExists(atPath: fileURL.path) {
             state = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: fileURL))
-            guard [1, 2, 3, 4, 5].contains(state.formatVersion) else { throw AppFailure("Unsupported local data version. Update the app before opening this data.") }
+            guard [1, 2, 3, 4, 5, 6].contains(state.formatVersion) else { throw AppFailure("Unsupported local data version. Update the app before opening this data.") }
         } else {
             state = SavedState()
         }
@@ -25,7 +25,14 @@ public final class TaskStore {
     }
 
     public var serverURL: String { state.serverURL }
-    public var projects: [Project] { state.snapshot.projects }
+    public var projects: [Project] {
+        var projects = state.snapshot.projects
+        for pending in state.pending where pending.entityKind == "projects" {
+            projects.removeAll { $0.id == pending.taskId }
+            if let project = pending.localProject { projects.append(project) }
+        }
+        return projects.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
     public var pendingCount: Int { state.pending.count }
     public var issue: SyncIssue? { state.issue }
     public var lastSyncedAt: Date? { state.lastSyncedAt }
@@ -124,6 +131,29 @@ public final class TaskStore {
         if next.pending.count != state.pending.count { try commit(next) }
     }
 
+    @discardableResult
+    public func createProject(named name: String) throws -> Project {
+        let mutation = try projectMutation(Project(id: UUID().uuidString.lowercased(), name: name))
+        var next = state
+        next.pending.append(mutation)
+        try commit(next)
+        return mutation.localProject!
+    }
+
+    private func projectMutation(_ draft: Project) throws -> PendingMutation {
+        let project = Project(id: draft.id, name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !project.name.isEmpty, !projects.contains(where: {
+            $0.name.compare(project.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }) else { throw AppFailure("Use a nonempty, unique project name.") }
+        guard UUID(uuidString: project.id) != nil, !projects.contains(where: { $0.id == project.id }),
+              state.snapshot.versions["projects/\(project.id)"] == nil else { throw AppFailure("This project ID is not available.") }
+        var body = MutationBody()
+        body.id = project.id; body.name = project.name
+        return PendingMutation(taskId: project.id,
+            operation: SyncOperation(url: "/api/projects", method: "POST", body: body, expectedVersion: 0),
+            entityKind: "projects", localProject: project)
+    }
+
     public func saveField(_ draft: TaskField, replacing original: TaskField? = nil) throws {
         var field = draft
         field.name = field.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -201,7 +231,10 @@ public final class TaskStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data: Data?
-        if issue.entityKind == "task-fields" {
+        if issue.entityKind == "projects" {
+            let value = (local ? projects : state.snapshot.projects).first { $0.id == issue.taskId }
+            data = try? encoder.encode(value)
+        } else if issue.entityKind == "task-fields" {
             let value = (local ? taskFields : state.snapshot.taskFields).first { $0.id == issue.taskId }
             data = try? encoder.encode(value)
         } else {
@@ -220,7 +253,12 @@ public final class TaskStore {
         if keepLocal {
             replacement.operation.id = UUID().uuidString.lowercased()
             replacement.operation.expectedVersion = version(for: issue.key)
-            let exists = issue.entityKind == "task-fields" ? state.snapshot.taskFields.contains { $0.id == issue.taskId } : state.snapshot.boards.contains { $0.id == issue.taskId }
+            let exists: Bool
+            switch issue.entityKind {
+            case "projects": exists = state.snapshot.projects.contains { $0.id == issue.taskId }
+            case "task-fields": exists = state.snapshot.taskFields.contains { $0.id == issue.taskId }
+            default: exists = state.snapshot.boards.contains { $0.id == issue.taskId }
+            }
             if replacement.operation.method != "DELETE" {
                 replacement.operation.method = exists ? "PUT" : "POST"
                 replacement.operation.url = "/api/\(issue.entityKind!)" + (exists ? "/\(issue.taskId)" : "")
@@ -245,13 +283,22 @@ public final class TaskStore {
         syncError = nil
     }
 
-    public func save(_ draft: TaskItem, replacing original: TaskItem? = nil) throws {
+    public func save(_ draft: TaskItem, replacing original: TaskItem? = nil, creatingProject: Project? = nil) throws {
         var next = state
-        next.pending.append(try taskMutation(draft, replacing: original))
+        var availableProjects = projects
+        if let creatingProject {
+            guard original == nil, draft.projectId == creatingProject.id else { throw AppFailure("The task must belong to the new project.") }
+            let mutation = try projectMutation(creatingProject)
+            next.pending.append(mutation)
+            availableProjects.append(mutation.localProject!)
+        }
+        next.pending.append(try taskMutation(draft, replacing: original, availableProjects: availableProjects))
+        // A new project and its first task reach disk together, with the project uploaded first.
         try commit(next)
     }
 
-    private func taskMutation(_ draft: TaskItem, replacing original: TaskItem?) throws -> PendingMutation {
+    private func taskMutation(_ draft: TaskItem, replacing original: TaskItem?, availableProjects: [Project]? = nil) throws -> PendingMutation {
+        let projects = availableProjects ?? self.projects
         var task = draft
         task.properties = task.properties.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         task.completed = task.statusId == "complete"
@@ -322,7 +369,7 @@ public final class TaskStore {
     // leaves the old queue intact; a committed server mutation can safely replay after a crash.
     private func commit(_ newState: SavedState) throws {
         var next = newState
-        next.formatVersion = 5
+        next.formatVersion = 6
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(next)

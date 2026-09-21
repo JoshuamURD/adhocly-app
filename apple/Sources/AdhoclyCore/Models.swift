@@ -140,6 +140,7 @@ struct PendingMutation: Codable, Sendable {
     var entityKind: String?
     var localField: TaskField?
     var localBoard: KanbanBoard?
+    var localProject: Project?
     var key: String { "\(entityKind ?? "tasks")/\(taskId)" }
 }
 
@@ -152,7 +153,7 @@ public struct SyncIssue: Codable, Sendable {
 }
 
 struct SavedState: Codable, Sendable {
-    var formatVersion = 5
+    var formatVersion = 6
     var serverURL = ""
     var snapshot = Snapshot()
     var pending: [PendingMutation] = []

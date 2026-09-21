@@ -56,6 +56,35 @@ final class CaptureTests: XCTestCase {
         }
     }
 
+    func testProjectCompletionAndNewProjectPreview() throws {
+        let project = Project(id: "work", name: #"Work / Café ! @ \"quoted\""#)
+        let projects = [Project(id: "inbox", name: "Inbox"), project]
+        for input in ["Task /cafe !tomorrow @Monday", "Task !tomorrow /\"Work", "Task /"] {
+            XCTAssertTrue(Capture.projectSuggestions(in: input, projects: projects).contains(project))
+            let completed = Capture.completingProject(in: input, with: project)
+            let result = try Capture.parse(completed, projects: projects, allowNewProject: true)
+            XCTAssertEqual(result.task.projectId, project.id)
+            XCTAssertNil(result.projectToCreate)
+            if input.contains("!tomorrow") { XCTAssertNotNil(result.task.dueOn) }
+            if input.contains("@Monday") { XCTAssertNotNil(result.task.plannedFor) }
+        }
+        for input in [#"Task \/work"#, "Task https://example.com", #"Task "/work""#, "Task /work /inbox"] {
+            XCTAssertTrue(Capture.projectSuggestions(in: input, projects: projects).isEmpty, input)
+            XCTAssertEqual(Capture.completingProject(in: input, with: project), input)
+        }
+        let result = try Capture.parse("Task /New project !tomorrow", projects: projects, allowNewProject: true)
+        XCTAssertEqual(result.projectToCreate?.name, "New project")
+        XCTAssertEqual(result.projectToCreate?.id, result.task.projectId)
+        XCTAssertEqual(result.task.title, "Task")
+        XCTAssertNotNil(result.task.dueOn)
+        XCTAssertNil(try Capture.parse("Task /INBOX", projects: projects, allowNewProject: true).projectToCreate)
+        for input in ["Task /New !invalid date", "Task /New /Another", "Task /", "/New", "Task /\"unclosed"] {
+            XCTAssertThrowsError(try Capture.parse(input, projects: projects, allowNewProject: true), input)
+        }
+        let ambiguous = [Project(id: "a", name: "Work"), Project(id: "b", name: "work")]
+        XCTAssertThrowsError(try Capture.parse("Task /WORK", projects: ambiguous, allowNewProject: true))
+    }
+
     func testReminderPlanIncludesBothDatesAndRemovesCompletedDeletedPastTasks() {
         var task = TaskItem(title: "Reminder")
         task.plannedFor = "2026-03-07T09:00"
@@ -182,7 +211,7 @@ final class KanbanStoreTests: XCTestCase {
         XCTAssertEqual(restored.tasks[0].statusId, "todo")
         try restored.toggle(restored.tasks[0].id)
         let saved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
-        XCTAssertEqual(saved.formatVersion, 5)
+        XCTAssertEqual(saved.formatVersion, 6)
         XCTAssertNil(saved.pending[0].operation.body.details)
         XCTAssertEqual(restored.tasks[0].details, "")
         XCTAssertNil(saved.pending[0].operation.body.reminders)

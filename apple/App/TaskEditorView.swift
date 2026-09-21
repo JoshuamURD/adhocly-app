@@ -8,6 +8,7 @@ struct TaskEditorView: View {
     let original: TaskItem?
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
+    @State private var showNewProject = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,7 @@ struct TaskEditorView: View {
                     Picker("Project", selection: $draft.projectId) {
                         ForEach(store.projects) { project in Text(project.name).tag(project.id) }
                     }
+                    Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
                     Picker(store.statusField.name, selection: $draft.statusId) {
                         ForEach(store.statusField.options) { option in Text(option.name).tag(option.id) }
                     }
@@ -118,6 +120,14 @@ struct TaskEditorView: View {
                     .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
                 }
+            }
+        }
+        .sheet(isPresented: $showNewProject) {
+            ProjectEditorView { name in
+                let project = try store.createProject(named: name)
+                draft.projectId = project.id
+                draft.project = project.name
+                model.didSave()
             }
         }
         #if os(macOS)

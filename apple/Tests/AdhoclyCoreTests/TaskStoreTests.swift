@@ -49,18 +49,22 @@ private final class MockServer: @unchecked Sendable {
             }
             let parts = operation.url.split(separator: "/").map { String($0).removingPercentEncoding! }
             let id = parts.count == 2 ? operation.body.id! : parts[2]
-            let key = "tasks/\(id)"
+            let key = "\(parts[1])/\(id)"
             guard snapshot.versions[key, default: 0] == operation.expectedVersion else {
                 return (409, Data("changed on another device".utf8))
             }
-            if operation.method == "DELETE" {
+            if parts[1] == "projects" {
+                snapshot.projects.removeAll { $0.id == id }
+                snapshot.projects.append(Project(id: id, name: operation.body.name!))
+            } else if operation.method == "DELETE" {
                 snapshot.tasks.removeAll { $0.id == id }
             } else if parts.last == "toggle" {
                 guard let index = snapshot.tasks.firstIndex(where: { $0.id == id }) else { return (404, Data()) }
                 snapshot.tasks[index].completed = operation.body.completed!
                 snapshot.tasks[index].statusId = operation.body.completed! ? "complete" : "todo"
             } else {
-                var task = TaskItem(title: operation.body.title!, projectId: operation.body.projectId!)
+                guard let project = snapshot.projects.first(where: { $0.id == operation.body.projectId }) else { return (400, Data("unknown project".utf8)) }
+                var task = TaskItem(title: operation.body.title!, projectId: project.id, project: project.name)
                 task.id = id
                 task.details = operation.body.details ?? ""
                 task.createdAt = "2026-04-01T00:00:00.000Z"
@@ -132,6 +136,77 @@ final class TaskStoreTests: XCTestCase {
         let store = try TaskStore(fileURL: file, session: session)
         if store.serverURL.isEmpty { try store.configure(serverURL: "https://\(host)") }
         return (store, session)
+    }
+
+    func testProjectAndCapturePersistAtomicallyAndSyncInOrderAfterLostReply() async throws {
+        let server = MockServer()
+        let file = file()
+        let (store, session) = try connectedStore(server: server, file: file)
+        let project = try store.createProject(named: "  Café  ")
+        XCTAssertEqual(project.name, "Café")
+        for name in ["", "  ", "cafe", "INBOX"] { XCTAssertThrowsError(try store.createProject(named: name)) }
+        let capture = try Capture.parse("First task /New project !tomorrow", projects: store.projects, allowNewProject: true)
+        let newProject = try XCTUnwrap(capture.projectToCreate)
+        var invalid = capture.task
+        invalid.title = ""
+        XCTAssertThrowsError(try store.save(invalid, creatingProject: newProject))
+        XCTAssertFalse(store.projects.contains(newProject))
+        XCTAssertEqual(store.pendingCount, 1)
+        try store.save(capture.task, creatingProject: newProject)
+        let queued = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        XCTAssertEqual(queued.pending.map(\.operation.url), ["/api/projects", "/api/projects", "/api/tasks"])
+        XCTAssertEqual(queued.pending.map(\.operation.expectedVersion), [0, 0, 0])
+        XCTAssertThrowsError(try store.save(capture.task, creatingProject: newProject))
+        server.loseNextReply()
+        await store.sync(token: "")
+        let restored = try TaskStore(fileURL: file, session: session)
+        XCTAssertTrue(restored.projects.contains(project))
+        XCTAssertTrue(restored.projects.contains(newProject))
+        XCTAssertEqual(restored.tasks.first?.projectId, newProject.id)
+        await restored.sync(token: "")
+        XCTAssertNil(restored.syncError)
+        XCTAssertNil(restored.issue)
+        XCTAssertEqual(restored.pendingCount, 0)
+        XCTAssertEqual(server.sent[0], server.sent[1])
+        XCTAssertEqual(restored.tasks.first?.project, newProject.name)
+        XCTAssertEqual(restored.tasks.first?.dueOn, capture.task.dueOn)
+
+        // Disk failure must not leave a project without its task (or vice versa).
+        let blocked = try TaskStore(fileURL: file.appending(path: "state.json"))
+        XCTAssertThrowsError(try blocked.save(capture.task, creatingProject: newProject))
+        XCTAssertEqual(blocked.projects.map(\.id), ["inbox"])
+        XCTAssertTrue(blocked.tasks.isEmpty)
+        XCTAssertEqual(blocked.pendingCount, 0)
+    }
+
+    func testProjectConfigurationReviewUsesProjectsNotBoards() throws {
+        let file = file()
+        let project = Project(id: UUID().uuidString.lowercased(), name: "Local project")
+        let store = try TaskStore(fileURL: file)
+        let task = TaskItem(title: "Keep this draft", projectId: project.id, project: project.name)
+        try store.save(task, creatingProject: project)
+        var state = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        state.snapshot.projects.append(Project(id: project.id, name: "Server project"))
+        state.snapshot.versions["projects/\(project.id)"] = 1
+        state.issue = SyncIssue(taskId: project.id, message: "Conflict", entityKind: "projects")
+        try JSONEncoder().encode(state).write(to: file)
+        let restored = try TaskStore(fileURL: file)
+        XCTAssertTrue(restored.configurationDescription(local: true).contains("Local project"))
+        XCTAssertTrue(restored.configurationDescription(local: false).contains("Server project"))
+        try restored.resolveConfigurationIssue(keepLocal: true)
+        let resolved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        XCTAssertEqual(resolved.pending[0].operation.url, "/api/projects/\(project.id)")
+        XCTAssertEqual(resolved.pending[0].operation.method, "PUT")
+        XCTAssertEqual(resolved.pending[0].operation.expectedVersion, 1)
+        XCTAssertEqual(restored.tasks.first?.id, task.id)
+        XCTAssertNil(restored.issue)
+
+        try JSONEncoder().encode(state).write(to: file)
+        let discarded = try TaskStore(fileURL: file)
+        try discarded.resolveConfigurationIssue(keepLocal: false)
+        XCTAssertEqual(discarded.projects.first { $0.id == project.id }?.name, "Server project")
+        XCTAssertEqual(discarded.tasks.first?.id, task.id)
+        XCTAssertEqual(discarded.pendingCount, 1)
     }
 
     func testOfflineEditsAndDeletesSurviveRelaunch() throws {
@@ -486,7 +561,8 @@ final class TaskStoreTests: XCTestCase {
         let b = try TaskStore(fileURL: file())
         try a.configure(serverURL: url)
         try b.configure(serverURL: url)
-        var task = TaskItem(title: "Swift integration \(UUID().uuidString)")
+        let project = try a.createProject(named: "Swift project \(UUID().uuidString)")
+        var task = TaskItem(title: "Swift integration \(UUID().uuidString)", projectId: project.id, project: project.name)
         task.details = "Longer task description\nWith a second line."
         task.plannedFor = "2026-04-01T09:00"
         task.repeatWeekday = 3
@@ -503,6 +579,9 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(original.plannedFor, task.plannedFor)
         XCTAssertEqual(original.details, task.details)
         XCTAssertEqual(original.reminders, task.reminders)
+        XCTAssertTrue(b.projects.contains(project))
+        XCTAssertEqual(original.projectId, project.id)
+        XCTAssertEqual(original.project, project.name)
 
         try relaunched.toggle(task.id)
         await relaunched.sync(token: token)

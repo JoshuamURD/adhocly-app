@@ -1,0 +1,409 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		14929AA7E6797F1983984F78 /* TaskEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */; };
+		2B83F7C1654CF5D0FC030ED7 /* BoardSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE15E50FF76E2DB3B027E337 /* BoardSettingsView.swift */; };
+		37605BA153D5B8851B090CFD /* AdhoclyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C11DE3299AB7A1B3B76C2A9 /* AdhoclyApp.swift */; };
+		38E91FDFAD1E9C01801385F7 /* AdhoclyCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2A09751E6322728D9CFD47AC /* AdhoclyCore */; };
+		56C743B81AE3DDED76A81190 /* Credentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C50F6A897117BEC2260E3A /* Credentials.swift */; };
+		56E3AB826CFCD5A8AAE20573 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2169C61190668ED60A2517 /* ReminderScheduler.swift */; };
+		7F5EC46AA09E938E66EBC2E8 /* CaptureBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A485208530742026EBDB35D0 /* CaptureBar.swift */; };
+		819A01BE8B2D18AF63E6CE6A /* TaskListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */; };
+		963A95D76903A6CE9DCA82CF /* AppStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D702CFFF61AB848257356 /* AppStyle.swift */; };
+		9A9354E970A075730A17C3EE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */; };
+		ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */; };
+		CC67898B65155639D554C4BF /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanView.swift; sourceTree = "<group>"; };
+		2C11DE3299AB7A1B3B76C2A9 /* AdhoclyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdhoclyApp.swift; sourceTree = "<group>"; };
+		30C50F6A897117BEC2260E3A /* Credentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Credentials.swift; sourceTree = "<group>"; };
+		429359F26B5CD814761E1B46 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		448B965FE0EF5AFD18A53A15 /* Adhocly-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-iOS.entitlements"; sourceTree = "<group>"; };
+		63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
+		7D30FF224100AB7BE66F3C51 /* Adhocly-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-macOS.entitlements"; sourceTree = "<group>"; };
+		7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A485208530742026EBDB35D0 /* CaptureBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureBar.swift; sourceTree = "<group>"; };
+		A57D702CFFF61AB848257356 /* AppStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStyle.swift; sourceTree = "<group>"; };
+		BB2169C61190668ED60A2517 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
+		BEA1E1937C93746E8AB47E7C /* Adhocly.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Adhocly.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C78489681480BA967161E1B5 /* apple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = apple; path = .; sourceTree = SOURCE_ROOT; };
+		CE15E50FF76E2DB3B027E337 /* BoardSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSettingsView.swift; sourceTree = "<group>"; };
+		E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEditorView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1918B6D466FC6201F430FE61 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				38E91FDFAD1E9C01801385F7 /* AdhoclyCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		89C63CADFA8EB0BADD6874F1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BEA1E1937C93746E8AB47E7C /* Adhocly.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		934E0B762D10250E006A6137 = {
+			isa = PBXGroup;
+			children = (
+				B40A8380A539BC38D80B1139 /* App */,
+				B9EC928A0570688BF6EE9FF0 /* Packages */,
+				89C63CADFA8EB0BADD6874F1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B40A8380A539BC38D80B1139 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				448B965FE0EF5AFD18A53A15 /* Adhocly-iOS.entitlements */,
+				7D30FF224100AB7BE66F3C51 /* Adhocly-macOS.entitlements */,
+				2C11DE3299AB7A1B3B76C2A9 /* AdhoclyApp.swift */,
+				A57D702CFFF61AB848257356 /* AppStyle.swift */,
+				7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */,
+				CE15E50FF76E2DB3B027E337 /* BoardSettingsView.swift */,
+				A485208530742026EBDB35D0 /* CaptureBar.swift */,
+				BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */,
+				30C50F6A897117BEC2260E3A /* Credentials.swift */,
+				429359F26B5CD814761E1B46 /* Info.plist */,
+				00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */,
+				BB2169C61190668ED60A2517 /* ReminderScheduler.swift */,
+				E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */,
+				63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		B9EC928A0570688BF6EE9FF0 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				C78489681480BA967161E1B5 /* apple */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		820C6A7BF10A49E455DA5113 /* Adhocly */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2A9AA51CC4890CB252CCD23C /* Build configuration list for PBXNativeTarget "Adhocly" */;
+			buildPhases = (
+				832841131503F06565047B64 /* Sources */,
+				FCABC846F793756DCE107915 /* Resources */,
+				1918B6D466FC6201F430FE61 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Adhocly;
+			packageProductDependencies = (
+				2A09751E6322728D9CFD47AC /* AdhoclyCore */,
+			);
+			productName = Adhocly;
+			productReference = BEA1E1937C93746E8AB47E7C /* Adhocly.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E998B46291F1A945710FE4B3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					820C6A7BF10A49E455DA5113 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 61D4DC7165982B841C154689 /* Build configuration list for PBXProject "Adhocly" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 934E0B762D10250E006A6137;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C28C37F2D69B0FA559B524A3 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 89C63CADFA8EB0BADD6874F1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				820C6A7BF10A49E455DA5113 /* Adhocly */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		FCABC846F793756DCE107915 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A9354E970A075730A17C3EE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		832841131503F06565047B64 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				37605BA153D5B8851B090CFD /* AdhoclyApp.swift in Sources */,
+				963A95D76903A6CE9DCA82CF /* AppStyle.swift in Sources */,
+				2B83F7C1654CF5D0FC030ED7 /* BoardSettingsView.swift in Sources */,
+				7F5EC46AA09E938E66EBC2E8 /* CaptureBar.swift in Sources */,
+				ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */,
+				56C743B81AE3DDED76A81190 /* Credentials.swift in Sources */,
+				CC67898B65155639D554C4BF /* KanbanView.swift in Sources */,
+				56E3AB826CFCD5A8AAE20573 /* ReminderScheduler.swift in Sources */,
+				14929AA7E6797F1983984F78 /* TaskEditorView.swift in Sources */,
+				819A01BE8B2D18AF63E6CE6A /* TaskListView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		171BAF937296C00B3880EFDC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		2DB54DFBAA54C460524884D5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		DEE82F342B523213070B57F5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Adhocly-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Adhocly-macOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adhocly.app;
+				PRODUCT_NAME = Adhocly;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E59058AA1FC8554C68FB2917 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Adhocly-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Adhocly-macOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adhocly.app;
+				PRODUCT_NAME = Adhocly;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2A9AA51CC4890CB252CCD23C /* Build configuration list for PBXNativeTarget "Adhocly" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E59058AA1FC8554C68FB2917 /* Debug */,
+				DEE82F342B523213070B57F5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		61D4DC7165982B841C154689 /* Build configuration list for PBXProject "Adhocly" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				171BAF937296C00B3880EFDC /* Debug */,
+				2DB54DFBAA54C460524884D5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C28C37F2D69B0FA559B524A3 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2A09751E6322728D9CFD47AC /* AdhoclyCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AdhoclyCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E998B46291F1A945710FE4B3 /* Project object */;
+}

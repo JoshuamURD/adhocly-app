@@ -4,6 +4,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     folders::{FolderRepository, SqliteFolderRepository},
+    kanban::KanbanRepository,
     projects::{ProjectRepository, SqliteProjectRepository},
     reminders::{ReminderRepository, SqliteReminderRepository},
     tasks::{SqliteTaskRepository, TaskRepository},
@@ -17,6 +18,7 @@ pub(crate) struct AppState {
     pub(crate) projects: Arc<dyn ProjectRepository>,
     pub(crate) folders: Arc<dyn FolderRepository>,
     pub(crate) reminders: Arc<dyn ReminderRepository>,
+    pub(crate) kanban: KanbanRepository,
 }
 
 impl AppState {
@@ -28,7 +30,8 @@ impl AppState {
         Self {
             tasks: Arc::new(SqliteTaskRepository::new(pool.clone(), sync.clone())),
             projects: Arc::new(SqliteProjectRepository::new(pool.clone(), sync.clone())),
-            folders: Arc::new(SqliteFolderRepository::new(pool.clone(), sync)),
+            folders: Arc::new(SqliteFolderRepository::new(pool.clone(), sync.clone())),
+            kanban: KanbanRepository::new(pool.clone(), sync),
             reminders: Arc::new(SqliteReminderRepository::new(pool.clone())),
             pool,
         }

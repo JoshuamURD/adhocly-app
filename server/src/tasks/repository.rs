@@ -3,10 +3,11 @@ use sqlx::SqlitePool;
 
 use crate::{
     error::AppError,
+    kanban::validate_task_values,
     sync::{SyncOperation, Write},
 };
 
-use super::model::{Task, TaskInput, ToggleResult};
+use super::model::{CustomReminder, ReminderKind, Task, TaskInput, ToggleResult};
 
 /// Persistence for tasks. Inputs are expected to be validated by the caller.
 ///
@@ -67,23 +68,28 @@ impl TaskRepository for SqliteTaskRepository {
             return Ok(value);
         }
         let conn = &mut *write.transaction;
-        let value: Result<_, AppError> = {
-            sqlx::query_file!(
-                "sql/tasks/insert.sql",
-                &input.id,
-                input.title.trim(),
-                input.project_id.trim(),
-                &input.planned_for,
-                &input.due_on,
-                input.repeat_weekday,
-                input.completed
-            )
-            .execute(&mut *conn)
-            .await?;
-
-            Self::fetch(&mut *conn, &input.id).await
-        };
-        write.commit(value?).await
+        let (status, properties) = Self::values(conn, input, None).await?;
+        let properties = serde_json::to_string(&properties)?;
+        let reminders = Self::reminders(conn, input.reminders.as_deref().unwrap_or(&[])).await?;
+        sqlx::query_file!(
+            "sql/tasks/insert.sql",
+            &input.id,
+            input.title.trim(),
+            input.details.as_deref().unwrap_or(""),
+            input.project_id.trim(),
+            &input.planned_for,
+            &input.due_on,
+            input.repeat_weekday,
+            input.completed,
+            status,
+            properties,
+            reminders
+        )
+        .execute(&mut *conn)
+        .await?;
+        let task = Self::fetch(&mut *conn, &input.id).await?;
+        Self::successor(conn, &task, None).await?;
+        write.commit(task).await
     }
 
     async fn update(&self, id: &str, input: &TaskInput) -> Result<Task, AppError> {
@@ -92,26 +98,31 @@ impl TaskRepository for SqliteTaskRepository {
             return Ok(value);
         }
         let conn = &mut *write.transaction;
-        let value: Result<_, AppError> = {
-            let result = sqlx::query_file!(
-                "sql/tasks/update.sql",
-                input.title.trim(),
-                input.project_id.trim(),
-                &input.planned_for,
-                &input.due_on,
-                input.repeat_weekday,
-                input.completed,
-                id
-            )
-            .execute(&mut *conn)
-            .await?;
-
-            if result.rows_affected() == 0 {
-                return Err(AppError::NotFound("task"));
-            }
-            Self::fetch(&mut *conn, id).await
-        };
-        write.commit(value?).await
+        let current = Self::fetch(&mut *conn, id).await?;
+        let (status, properties) = Self::values(conn, input, Some(&current)).await?;
+        let properties = serde_json::to_string(&properties)?;
+        let reminders = Self::reminders(conn, input.reminders.as_deref().unwrap_or(&current.reminders)).await?;
+        sqlx::query_file!(
+            "sql/tasks/update.sql",
+            input.title.trim(),
+            input.details.as_deref().unwrap_or(&current.details),
+            input.project_id.trim(),
+            &input.planned_for,
+            &input.due_on,
+            input.repeat_weekday,
+            input.completed,
+            status,
+            properties,
+            reminders,
+            id
+        )
+        .execute(&mut *conn)
+        .await?;
+        let task = Self::fetch(&mut *conn, id).await?;
+        if !current.completed {
+            Self::successor(conn, &task, None).await?;
+        }
+        write.commit(task).await
     }
 
     async fn toggle(
@@ -125,49 +136,21 @@ impl TaskRepository for SqliteTaskRepository {
             return Ok(value);
         }
         let conn = &mut *write.transaction;
-        let value: Result<_, AppError> = {
-            let current = Self::fetch(&mut *conn, id).await?;
-
-            sqlx::query!(
-            "UPDATE tasks SET completed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
-            completed,
-            id
-        )
-        .execute(&mut *conn)
-        .await?;
-            let task = Self::fetch(&mut *conn, id).await?;
-
-            let next_task = if completed && current.repeat_weekday.is_some() {
-                // One successor per occurrence, shared by every device (including browser clients).
-                // ponytail: ids grow with each occurrence; use UUIDv5 if very long recurrence chains matter.
-                let canonical = format!("next:{id}");
-                if next_id.is_some_and(|value| value != canonical) {
-                    return Err(AppError::Invalid(
-                        "nextId must be the canonical successor id",
-                    ));
-                }
-                let key = format!("tasks/{canonical}");
-                let seen: bool =
-                    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sync_versions WHERE key = ?)")
-                        .bind(&key)
-                        .fetch_one(&mut *conn)
-                        .await?;
-                // A deleted successor remains a tombstone: retries must not resurrect it.
-                if !seen {
-                    sqlx::query_file!("sql/tasks/insert_next_occurrence.sql", &canonical, id)
-                        .execute(&mut *conn)
-                        .await?;
-                }
-                sqlx::query_file_as!(Task, "sql/tasks/select_one.sql", &canonical)
-                    .fetch_optional(&mut *conn)
-                    .await?
-            } else {
-                None
-            };
-
-            Ok(ToggleResult { task, next_task })
+        let current = Self::fetch(&mut *conn, id).await?;
+        let status = if completed {
+            "complete"
+        } else if current.completed {
+            "todo"
+        } else {
+            &current.status_id
         };
-        write.commit(value?).await
+        sqlx::query!(
+            "UPDATE tasks SET completed = ?, status_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            completed, status, id
+        ).execute(&mut *conn).await?;
+        let task = Self::fetch(&mut *conn, id).await?;
+        let next_task = Self::successor(conn, &task, next_id).await?;
+        write.commit(ToggleResult { task, next_task }).await
     }
 
     async fn delete(&self, id: &str) -> Result<(), AppError> {
@@ -190,6 +173,102 @@ impl TaskRepository for SqliteTaskRepository {
 }
 
 impl SqliteTaskRepository {
+    async fn reminders(
+        conn: &mut sqlx::SqliteConnection,
+        reminders: &[CustomReminder],
+    ) -> Result<String, AppError> {
+        let mut ids = std::collections::HashSet::new();
+        if reminders.len() > 64 {
+            return Err(AppError::Invalid("at most 64 custom reminders per task"));
+        }
+        for reminder in reminders {
+            if reminder.id.trim().is_empty() || reminder.id.len() > 128 || !ids.insert(&reminder.id) {
+                return Err(AppError::Invalid("reminder ids must be nonempty and unique"));
+            }
+            if reminder.kind == ReminderKind::Custom {
+                let at = reminder.at.as_deref().unwrap_or("");
+                // SQLite normalizes impossible dates; require an exact wall-clock round trip.
+                let normalized: Option<String> = sqlx::query_scalar("SELECT strftime('%Y-%m-%dT%H:%M', ?)")
+                    .bind(at).fetch_one(&mut *conn).await?;
+                if at.len() != 16 || (reminder.offset_minutes.is_some() || reminder.offset_unit.is_some() || reminder.offset_value.is_some()) || normalized.as_deref() != Some(at) {
+                    return Err(AppError::Invalid("custom reminders need a valid YYYY-MM-DDTHH:MM date and no offset"));
+                }
+            } else {
+                let valid_offset = match (&reminder.offset_unit, reminder.offset_value, reminder.offset_minutes) {
+                    (Some(_), Some(1..=999), None) => true,
+                    (None, None, Some(5 | 15 | 30 | 60 | 120 | 1440 | 2880 | 10080)) => true,
+                    _ => false,
+                };
+                if reminder.at.is_some() || !valid_offset {
+                    return Err(AppError::Invalid("relative reminders need a unit and amount from 1 to 999 (or a legacy preset), and no fixed date"));
+                }
+            }
+        }
+        Ok(serde_json::to_string(reminders)?)
+    }
+
+    async fn values(
+        conn: &mut sqlx::SqliteConnection,
+        input: &TaskInput,
+        current: Option<&Task>,
+    ) -> Result<(String, std::collections::BTreeMap<String, String>), AppError> {
+        let fallback = if input.completed {
+            "complete"
+        } else {
+            current
+                .filter(|task| !task.completed)
+                .map(|task| task.status_id.as_str())
+                .unwrap_or("todo")
+        };
+        let status = input.status_id.as_deref().unwrap_or(fallback);
+        if input.completed != (status == "complete") {
+            return Err(AppError::Invalid("statusId and completed must agree"));
+        }
+        let mut properties = input.properties.clone().unwrap_or_else(|| {
+            current
+                .map(|task| task.properties.0.clone())
+                .unwrap_or_default()
+        });
+        properties.retain(|_, value| !value.trim().is_empty());
+        validate_task_values(conn, status, &properties).await?;
+        Ok((status.to_owned(), properties))
+    }
+
+    /// One completion path for checkbox toggles, Kanban moves and ordinary API updates.
+    async fn successor(
+        conn: &mut sqlx::SqliteConnection,
+        task: &Task,
+        next_id: Option<&str>,
+    ) -> Result<Option<Task>, AppError> {
+        if !task.completed || task.repeat_weekday.is_none() {
+            return Ok(None);
+        }
+        // ponytail: ids grow with each occurrence; use UUIDv5 if very long chains matter.
+        let canonical = format!("next:{}", task.id);
+        if next_id.is_some_and(|value| value != canonical) {
+            return Err(AppError::Invalid(
+                "nextId must be the canonical successor id",
+            ));
+        }
+        let key = format!("tasks/{canonical}");
+        let seen: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sync_versions WHERE key = ?)")
+                .bind(&key)
+                .fetch_one(&mut *conn)
+                .await?;
+        // Tombstones prevent a retry or re-completion from resurrecting deleted successors.
+        if !seen {
+            sqlx::query_file!("sql/tasks/insert_next_occurrence.sql", &canonical, &task.id)
+                .execute(&mut *conn)
+                .await?;
+        }
+        Ok(
+            sqlx::query_file_as!(Task, "sql/tasks/select_one.sql", &canonical)
+                .fetch_optional(conn)
+                .await?,
+        )
+    }
+
     pub(crate) async fn list_in(conn: &mut sqlx::SqliteConnection) -> Result<Vec<Task>, AppError> {
         Ok(sqlx::query_file_as!(Task, "sql/tasks/select_all.sql")
             .fetch_all(&mut *conn)

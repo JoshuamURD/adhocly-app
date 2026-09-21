@@ -14,6 +14,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::{
     error::AppError,
     folders::{self, Folder, FolderInput},
+    kanban::{self, Board, FieldOption, TaskField},
     projects::{
         self, FieldKind, MetadataField, MetadataFieldInput, MetadataFieldUpdate, MetadataValue,
         MetadataValueInput, Project, ProjectFolderInput, ProjectInput,
@@ -30,6 +31,9 @@ use crate::{
     // docs' own origin and every "Send request" 404s. The generated openapi.json carries it too.
     servers((url = "http://localhost:3000", description = "Local adhocly API")),
     components(schemas(
+        Board,
+        FieldOption,
+        TaskField,
         SyncOperation,
         SyncSnapshot,
         SyncReply,
@@ -65,6 +69,10 @@ fn api_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
         .routes(routes!(sync::get_snapshot, sync::apply))
+        .routes(routes!(kanban::list_fields, kanban::create_field))
+        .routes(routes!(kanban::update_field))
+        .routes(routes!(kanban::list_boards, kanban::create_board))
+        .routes(routes!(kanban::update_board, kanban::delete_board))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
         .routes(routes!(
             tasks::get_task,

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "-- Spawns the next occurrence of a repeating task, a week after the one being completed.\n-- planned_for / due_on keep their wall-clock time; NULL stays NULL.\nINSERT INTO tasks (\n    id, title, details, project_id, planned_for, due_on, repeat_weekday, created_at, updated_at, completed, status_id, properties, reminders\n)\nSELECT\n    ?,\n    title,\n    details,\n    project_id,\n    CASE WHEN planned_for IS NULL THEN NULL\n         ELSE strftime('%Y-%m-%dT%H:%M', planned_for, '+7 days') END,\n    CASE WHEN due_on IS NULL THEN NULL\n         ELSE strftime('%Y-%m-%dT%H:%M', due_on, '+7 days') END,\n    repeat_weekday,\n    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),\n    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),\n    0,\n    'todo',\n    properties,\n    -- Relative reminders follow the new occurrence; fixed calendar dates are one-off.\n    (SELECT json_group_array(json(value)) FROM json_each(tasks.reminders)\n     WHERE json_extract(value, '$.kind') != 'custom')\nFROM tasks\nWHERE id = ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "8443298f616795b09aebc8e59b2a2cecb86687e377f82bf48930ba3391783f99"
+}

@@ -1,6 +1,7 @@
 mod db;
 mod error;
 mod folders;
+mod kanban;
 mod projects;
 mod reminders;
 mod routes;

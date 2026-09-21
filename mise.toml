@@ -73,14 +73,39 @@ description = "Run the SQLite API and its Scalar API docs"
 run = "mise run api:serve ::: api:docs"
 
 [tasks."mobile:ios"]
-description = "Run the iOS app"
+description = "Build and run the SwiftUI app in the iOS Simulator"
 run = '''
 device="${IOS_DEVICE:-iPhone 17}"
 xcrun simctl boot "$device" 2>/dev/null || true
 xcrun simctl bootstatus "$device" -b
-bun run tauri ios dev "$device"
+xcodebuild -project apple/Adhocly.xcodeproj -scheme Adhocly \
+  -destination "platform=iOS Simulator,name=$device" \
+  -derivedDataPath apple/DerivedData CODE_SIGNING_ALLOWED=NO build
+xcrun simctl install "$device" apple/DerivedData/Build/Products/Debug-iphonesimulator/Adhocly.app
+xcrun simctl launch "$device" com.adhocly.app
 '''
+
+[tasks."desktop:macos"]
+description = "Build and run the SwiftUI app on macOS"
+run = '''
+xcodebuild -project apple/Adhocly.xcodeproj -scheme Adhocly \
+  -destination 'platform=macOS' -derivedDataPath apple/DerivedData \
+  CODE_SIGNING_ALLOWED=NO build
+open apple/DerivedData/Build/Products/Debug/Adhocly.app
+'''
+
+[tasks."apple:test"]
+description = "Test offline persistence and the Swift sync client"
+run = "swift test --package-path apple"
+
+[tasks."apple:integration"]
+description = "Test the Swift client against an isolated Rust server and temporary database"
+run = "apple/scripts/test-integration.sh"
 
 [tasks.dev]
 description = "Run the API and iOS app together"
 run = "mise run server ::: mobile:ios"
+
+[tasks."dev:macos"]
+description = "Run the API and macOS app together"
+run = "mise run api:serve ::: desktop:macos"

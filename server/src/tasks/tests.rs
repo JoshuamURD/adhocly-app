@@ -29,6 +29,7 @@ fn assert_task(
         created_at: _,
         updated_at: _,
         completed: actual_completed,
+        ..
     } = task;
 
     assert_eq!(actual_id, id);
@@ -71,6 +72,10 @@ async fn crud_round_trip() {
         due_on: Some("2026-04-03T09:00".into()),
         repeat_weekday: Some(3),
         completed: false,
+        status_id: None,
+        properties: None,
+        reminders: None,
+        details: None,
     };
     let (_, Json(created)) = create_task(State(state.clone()), Json(input))
         .await
@@ -131,6 +136,10 @@ async fn crud_round_trip() {
         due_on: Some("2026-05-09T09:00".into()),
         repeat_weekday: Some(5),
         completed: true,
+        status_id: None,
+        properties: None,
+        reminders: None,
+        details: None,
     };
     let Json(updated) = update_task(Path(next_id), State(state.clone()), Json(update))
         .await
@@ -161,6 +170,10 @@ async fn crud_round_trip() {
         true,
     );
 
+    // Completing through PUT also creates the next recurrence.
+    delete_task(Path(format!("next:{}", updated.id)), State(state.clone()))
+        .await
+        .unwrap();
     delete_task(Path(created.id), State(state.clone()))
         .await
         .unwrap();
@@ -183,6 +196,10 @@ async fn rejects_unknown_project() {
         due_on: None,
         repeat_weekday: None,
         completed: false,
+        status_id: None,
+        properties: None,
+        reminders: None,
+        details: None,
     };
     let error = create_task(State(state.clone()), Json(input))
         .await
@@ -191,4 +208,72 @@ async fn rejects_unknown_project() {
 
     let Json(tasks) = list_tasks(State(state)).await.unwrap();
     assert!(tasks.is_empty());
+}
+
+#[tokio::test]
+async fn custom_reminders_round_trip_preserve_legacy_edits_and_validate() {
+    use serde_json::json;
+    let state = AppState::new(test_db().await);
+    let mut input = json!({
+        "id":"reminders", "title":"Reminders", "details":"Long description\nWith notes.", "projectId":"inbox", "completed":false,
+        "plannedFor":"2026-04-01T09:00", "dueOn":"2026-04-02T09:00", "repeatWeekday":3,
+        "reminders":[
+            {"id":"fixed", "kind":"custom", "at":"2026-03-30T10:00", "urgent":true},
+            {"id":"relative", "kind":"due", "offsetMinutes":1440, "urgent":false},
+            {"id":"months", "kind":"planned", "offsetUnit":"months", "offsetValue":3}
+        ]
+    });
+    let (_, Json(created)) = create_task(State(state.clone()), Json(serde_json::from_value(input.clone()).unwrap())).await.unwrap();
+    assert_eq!(created.reminders.len(), 3);
+    assert_eq!(created.details, "Long description\nWith notes.");
+    assert!(created.reminders[0].urgent);
+    let Json(fetched) = get_task(Path(created.id.clone()), State(state.clone())).await.unwrap();
+    assert_eq!(serde_json::to_value(&fetched.reminders).unwrap(), serde_json::to_value(&created.reminders).unwrap());
+    input.as_object_mut().unwrap().remove("reminders");
+    input.as_object_mut().unwrap().remove("details");
+    let Json(legacy) = update_task(Path(created.id.clone()), State(state.clone()), Json(serde_json::from_value(input.clone()).unwrap())).await.unwrap();
+    assert_eq!(legacy.details, created.details);
+    assert_eq!(legacy.reminders.len(), 3, "old clients must not delete reminders");
+
+    let Json(result) = toggle_task(Path(created.id.clone()), State(state.clone()), Json(ToggleInput { completed:true, next_id:None })).await.unwrap();
+    let next = result.next_task.unwrap();
+    assert_eq!(next.details, created.details);
+    assert_eq!(next.reminders.len(), 2);
+    assert_eq!(next.reminders[1].offset_value, Some(3));
+    assert_eq!(next.reminders[0].id, "relative");
+    assert_eq!(next.due_on.as_deref(), Some("2026-04-09T09:00"));
+
+    let invalid = [
+        json!([{"id":"x","kind":"custom","at":"2026-01-01T09:00","offsetUnit":"days","offsetValue":1}]),
+        json!([{"id":"x","kind":"due","offsetUnit":"days"}]),
+        json!([{"id":"x","kind":"due","offsetValue":1}]),
+        json!([{"id":"x","kind":"due","offsetUnit":"days","offsetValue":0}]),
+        json!([{"id":"x","kind":"due","offsetUnit":"weeks","offsetValue":-1}]),
+        json!([{"id":"x","kind":"due","offsetUnit":"months","offsetValue":1000}]),
+        json!([{"id":"x","kind":"due","offsetUnit":"hours","offsetValue":1,"offsetMinutes":60}]),
+        json!([{"id":"x","kind":"custom","at":"2026-02-30T09:00"}]),
+        json!([{"id":"x","kind":"custom","at":"2026-01-01T25:00"}]),
+        json!([{"id":"x","kind":"custom","at":"2026-01-01T09:00","offsetMinutes":60}]),
+        json!([{"id":"x","kind":"planned","offsetMinutes":0}]),
+        json!([{"id":"x","kind":"due","offsetMinutes":-60}]),
+        json!([{"id":"x","kind":"due"}]),
+        json!([{"id":"","kind":"due","offsetMinutes":60}]),
+        json!([{"id":"x","kind":"due","offsetMinutes":60},{"id":"x","kind":"due","offsetMinutes":1440}]),
+    ];
+    for reminders in invalid {
+        input["reminders"] = reminders;
+        assert!(update_task(Path(created.id.clone()), State(state.clone()), Json(serde_json::from_value(input.clone()).unwrap())).await.is_err(), "{input}");
+        assert_eq!(state.tasks.get(&created.id).await.unwrap().reminders.len(), 3);
+    }
+    for unit in ["minutes", "hours", "days", "weeks", "months"] {
+        input["reminders"] = json!([{"id":"units","kind":"due","offsetUnit":unit,"offsetValue":4}]);
+        let Json(updated) = update_task(Path(created.id.clone()), State(state.clone()), Json(serde_json::from_value(input.clone()).unwrap())).await.unwrap();
+        assert_eq!(serde_json::to_value(&updated.reminders).unwrap()[0]["offsetUnit"], unit);
+        assert_eq!(updated.reminders[0].offset_value, Some(4));
+    }
+    input["details"] = json!("");
+    input["reminders"] = json!([]);
+    let Json(cleared) = update_task(Path(created.id.clone()), State(state.clone()), Json(serde_json::from_value(input).unwrap())).await.unwrap();
+    assert!(cleared.details.is_empty());
+    assert!(cleared.reminders.is_empty());
 }

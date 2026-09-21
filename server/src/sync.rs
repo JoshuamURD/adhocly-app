@@ -9,7 +9,7 @@ use serde_json::Value;
 use sqlx::{Sqlite, SqliteConnection, SqlitePool, Transaction};
 use utoipa::ToSchema;
 
-use crate::{error::AppError, folders, projects, state::AppState, tasks};
+use crate::{error::AppError, folders, kanban, projects, state::AppState, tasks};
 
 type Versions = BTreeMap<String, i64>;
 
@@ -61,11 +61,15 @@ impl SyncOperation {
 }
 
 #[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SyncSnapshot {
+    protocol_version: u32,
     tasks: Vec<tasks::Task>,
     projects: Vec<projects::Project>,
     folders: Vec<folders::Folder>,
     fields: Vec<projects::MetadataField>,
+    task_fields: Vec<kanban::TaskField>,
+    boards: Vec<kanban::Board>,
     versions: Versions,
 }
 
@@ -178,10 +182,13 @@ impl Write {
 async fn snapshot(pool: &SqlitePool) -> Result<SyncSnapshot, AppError> {
     let mut tx = pool.begin().await?;
     let snapshot = SyncSnapshot {
+        protocol_version: 5,
         tasks: tasks::SqliteTaskRepository::list_in(&mut tx).await?,
         projects: projects::SqliteProjectRepository::list_in(&mut tx).await?,
         folders: folders::SqliteFolderRepository::list_in(&mut tx).await?,
         fields: projects::SqliteProjectRepository::list_fields_in(&mut tx).await?,
+        task_fields: kanban::KanbanRepository::fields_in(&mut tx).await?,
+        boards: kanban::KanbanRepository::boards_in(&mut tx).await?,
         versions: versions(&mut tx).await?,
     };
     tx.commit().await?;
@@ -228,6 +235,21 @@ pub(crate) async fn apply(
     }
     // Reuse the same handlers and validation as online clients; repositories own the transaction.
     match (operation.method.as_str(), parts.as_slice()) {
+        ("POST", ["task-fields"]) => {
+            let _ = kanban::create_field(scoped, body!()).await?;
+        }
+        ("PUT", ["task-fields", id]) => {
+            let _ = kanban::update_field(Path(id.to_string()), scoped, body!()).await?;
+        }
+        ("POST", ["boards"]) => {
+            let _ = kanban::create_board(scoped, body!()).await?;
+        }
+        ("PUT", ["boards", id]) => {
+            let _ = kanban::update_board(Path(id.to_string()), scoped, body!()).await?;
+        }
+        ("DELETE", ["boards", id]) => {
+            let _ = kanban::delete_board(Path(id.to_string()), scoped).await?;
+        }
         ("POST", ["tasks"]) => {
             let _ = tasks::create_task(scoped, body!()).await?;
         }

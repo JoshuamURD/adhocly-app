@@ -15,6 +15,138 @@
     }
   ],
   "paths": {
+    "/api/boards": {
+      "get": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "list_boards",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Board"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "create_board",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/boards/{id}": {
+      "put": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "update_board",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "delete_board",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/api/folders": {
       "get": {
         "tags": [
@@ -790,6 +922,117 @@
         }
       }
     },
+    "/api/task-fields": {
+      "get": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "list_fields",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskField"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "create_field",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskField"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskField"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/task-fields/{id}": {
+      "put": {
+        "tags": [
+          "kanban"
+        ],
+        "operationId": "update_field",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskField"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskField"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks": {
       "get": {
         "tags": [
@@ -1080,6 +1323,123 @@
           "type": "string"
         }
       },
+      "Board": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "fieldId"
+        ],
+        "properties": {
+          "fieldId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "manualOrder": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "sortMode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BoardInput": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "fieldId"
+        ],
+        "properties": {
+          "fieldId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "manualOrder": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "sortMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Missing sorting fields preserve existing settings for older clients."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CustomReminder": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Local wall-clock time; required only for custom-date reminders."
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReminderKind"
+          },
+          "offsetMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Legacy presets; omit when using offsetUnit and offsetValue."
+          },
+          "offsetUnit": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReminderUnit"
+              }
+            ]
+          },
+          "offsetValue": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Whole units before the anchor, from 1 through 999."
+          },
+          "urgent": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "FieldKind": {
         "type": "string",
         "enum": [
@@ -1087,6 +1447,22 @@
           "number",
           "choice"
         ]
+      },
+      "FieldOption": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "Folder": {
         "type": "object",
@@ -1328,6 +1704,24 @@
           }
         }
       },
+      "ReminderKind": {
+        "type": "string",
+        "enum": [
+          "custom",
+          "planned",
+          "due"
+        ]
+      },
+      "ReminderUnit": {
+        "type": "string",
+        "enum": [
+          "minutes",
+          "hours",
+          "days",
+          "weeks",
+          "months"
+        ]
+      },
       "SyncOperation": {
         "type": "object",
         "required": [
@@ -1381,13 +1775,22 @@
       "SyncSnapshot": {
         "type": "object",
         "required": [
+          "protocolVersion",
           "tasks",
           "projects",
           "folders",
           "fields",
+          "taskFields",
+          "boards",
           "versions"
         ],
         "properties": {
+          "boards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Board"
+            }
+          },
           "fields": {
             "type": "array",
             "items": {
@@ -1404,6 +1807,17 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Project"
+            }
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "taskFields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskField"
             }
           },
           "tasks": {
@@ -1435,6 +1849,9 @@
           "createdAt": {
             "type": "string"
           },
+          "details": {
+            "type": "string"
+          },
           "dueOn": {
             "type": [
               "string",
@@ -1453,11 +1870,25 @@
             "description": "Local wall-clock date and time, `YYYY-MM-DDTHH:MM`."
           },
           "project": {
-            "type": "string",
-            "description": "Name of the owning project, joined for display."
+            "type": "string"
           },
           "projectId": {
             "type": "string"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "reminders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomReminder"
+            }
           },
           "repeatWeekday": {
             "type": [
@@ -1466,6 +1897,9 @@
             ],
             "format": "int64"
           },
+          "statusId": {
+            "type": "string"
+          },
           "title": {
             "type": "string"
           },
@@ -1473,6 +1907,33 @@
             "type": "string"
           }
         }
+      },
+      "TaskField": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "options"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldOption"
+            }
+          }
+        },
+        "additionalProperties": false
       },
       "TaskInput": {
         "type": "object",
@@ -1485,6 +1946,13 @@
         "properties": {
           "completed": {
             "type": "boolean"
+          },
+          "details": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omission preserves details; an empty string clears them."
           },
           "dueOn": {
             "type": [
@@ -1506,12 +1974,42 @@
           "projectId": {
             "type": "string"
           },
+          "properties": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Omission preserves existing properties. An empty map explicitly clears them.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "reminders": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CustomReminder"
+            },
+            "description": "Omission preserves reminders; an empty list removes all custom reminders."
+          },
           "repeatWeekday": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64"
+          },
+          "statusId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omission preserves an existing non-complete status on updates from older clients."
           },
           "title": {
             "type": "string"

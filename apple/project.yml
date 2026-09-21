@@ -1,0 +1,51 @@
+name: Adhocly
+options:
+  bundleIdPrefix: com.adhocly
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+packages:
+  AdhoclyCore:
+    path: .
+targets:
+  Adhocly:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources: [App]
+    dependencies:
+      - package: AdhoclyCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.adhocly.app
+        PRODUCT_NAME: Adhocly
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Adhocly-iOS.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Adhocly-macOS.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Adhocly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        NSLocalNetworkUsageDescription: Connect to your Adhocly Rust server on the local network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+schemes:
+  Adhocly:
+    build:
+      targets:
+        Adhocly: all
+    run:
+      config: Debug

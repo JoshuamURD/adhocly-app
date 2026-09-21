@@ -1,5 +1,8 @@
 import AdhoclyCore
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct TaskTitleEditingKey: PreferenceKey {
     static var defaultValue: Bool { false }
@@ -35,15 +38,11 @@ struct TaskQuickEdit<Content: View>: View {
                 .accessibilityLabel("Edit title: \(task.title)")
                 .help("Edit title · @ planned · ! due · / project")
             }
-            Button(action: openDetails) {
-                Image(systemName: "slider.horizontal.3")
-                    .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("Details for \(task.title)")
-            .help("Open full task details")
+            #if os(macOS)
+            if original == nil { detailsButton }
+            #else
+            detailsButton
+            #endif
         }
         .contextMenu {
             Button("Edit title", systemImage: "pencil", action: beginEditing)
@@ -89,7 +88,9 @@ struct TaskQuickEdit<Content: View>: View {
                 .textFieldStyle(.plain)
                 .font(.body.weight(.medium))
                 .focused($isFocused)
-                .frame(minHeight: 44)
+                .frame(minHeight: AppStyle.controlSide)
+                .multilineTextAlignment(.leading)
+                .help("Return to save · Escape to cancel\n@ planned · ! due · / project")
                 .onSubmit { _ = save() }
                 .onKeyPress(.escape) { cancel(); return .handled }
                 .accessibilityLabel("Inline task title")
@@ -97,8 +98,10 @@ struct TaskQuickEdit<Content: View>: View {
                 .submitLabel(.done)
                 .autocorrectionDisabled()
                 #endif
+            #if os(iOS)
             Text("@ planned · ! due · / project")
                 .font(.caption).foregroundStyle(.secondary)
+            #endif
             let suggestions = Capture.projectSuggestions(in: text, projects: store.projects)
             if !suggestions.isEmpty && preview?.hasProject != true {
                 ScrollView {
@@ -110,7 +113,7 @@ struct TaskQuickEdit<Content: View>: View {
                                 isFocused = true
                             } label: {
                                 Label(project.name, systemImage: "folder")
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .frame(maxWidth: .infinity, minHeight: AppStyle.controlSide, alignment: .leading)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -118,7 +121,11 @@ struct TaskQuickEdit<Content: View>: View {
                         }
                     }
                 }
-                .frame(height: CGFloat(min(suggestions.count, 3)) * 44)
+                .frame(height: CGFloat(min(suggestions.count, 3)) * AppStyle.controlSide)
+                #if os(macOS)
+                .padding(.horizontal, 8)
+                .background(AppStyle.canvas, in: RoundedRectangle(cornerRadius: 6))
+                #endif
             }
             if let preview {
                 if preview.hasPlannedDate, let value = preview.task.plannedFor { TaskDateLabel(value: value) }
@@ -126,6 +133,21 @@ struct TaskQuickEdit<Content: View>: View {
                 if preview.hasProject { Label(preview.task.project, systemImage: "folder").font(.caption) }
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
+            #if os(macOS)
+            Divider()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Text("@ planned · ! due · / project")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    desktopActions.labelStyle(.titleOnly)
+                }
+                HStack {
+                    Spacer(minLength: 0)
+                    desktopActions.labelStyle(.iconOnly)
+                }
+            }
+            #else
             HStack {
                 Button("Save title") { _ = save() }
                     .disabled(preview == nil)
@@ -134,12 +156,65 @@ struct TaskQuickEdit<Content: View>: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .frame(minHeight: 44)
+            #endif
         }
         .fixedSize(horizontal: false, vertical: true)
+        #if os(macOS)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.cardRadius))
+        .background(InlineEditBoundary(commit: save))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppStyle.cardRadius)
+                .strokeBorder(isFocused ? Color.accentColor.opacity(0.5) : AppStyle.border)
+                .allowsHitTesting(false)
+        }
+        #else
         .padding(8)
         .background(Color.accentColor.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor.opacity(0.4)).allowsHitTesting(false) }
+        #endif
     }
+
+    private var detailsButton: some View {
+        Button(action: openDetails) {
+            Image(systemName: "slider.horizontal.3")
+                .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Details for \(task.title)")
+        .help(original == nil ? "Open full task details" : "Save title and open full task details")
+    }
+
+    #if os(macOS)
+    private var desktopActions: some View {
+        HStack(spacing: 6) {
+            detailsButton
+            Button(action: cancel) {
+                Label("Cancel", systemImage: "xmark")
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(Rectangle())
+            }
+            .foregroundStyle(.secondary)
+            .help("Cancel editing (Escape)")
+            Button { _ = save() } label: {
+                Label("Save", systemImage: "checkmark")
+                    .frame(minWidth: 28, minHeight: 28)
+                    .padding(.horizontal, 4)
+                    .contentShape(Rectangle())
+            }
+            .foregroundStyle(preview == nil ? Color.secondary : Color.accentColor)
+            .background(AppStyle.canvas, in: RoundedRectangle(cornerRadius: 5))
+            .disabled(preview == nil)
+            .accessibilityLabel("Save title")
+            .help("Save title (Return)")
+        }
+        .font(.caption.weight(.medium))
+        .buttonStyle(.plain)
+    }
+    #endif
 
     private func beginEditing() {
         guard original == nil else { isFocused = true; return }
@@ -223,6 +298,44 @@ struct TaskQuickEdit<Content: View>: View {
         model.perform { try store.save(updated, replacing: task) }
     }
 }
+
+#if os(macOS)
+/// Watch the whole editor, not just text-field focus: suggestion and action clicks stay inside.
+private struct InlineEditBoundary: NSViewRepresentable {
+    let commit: () -> Bool
+
+    func makeNSView(context: Context) -> BoundaryView { BoundaryView() }
+    func updateNSView(_ view: BoundaryView, context: Context) { view.commit = commit }
+    static func dismantleNSView(_ view: BoundaryView, coordinator: ()) { view.stopMonitoring() }
+
+    final class BoundaryView: NSView {
+        var commit: () -> Bool = { true }
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stopMonitoring()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                guard let self, let window = self.window, event.window === window else { return event }
+                if !self.bounds.contains(self.convert(event.locationInWindow, from: nil)) {
+                    // Save before navigation or completion can remove this row. Invalid edits
+                    // consume the outside click so the draft and its error remain visible.
+                    return self.commit() ? event : nil
+                }
+                return event
+            }
+        }
+
+        func stopMonitoring() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
+}
+#endif
 
 private struct TaskDateRequest: Identifiable {
     var id: String { task.id }

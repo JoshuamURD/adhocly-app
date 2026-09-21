@@ -45,7 +45,7 @@ Click a project result to open it. Edit task titles inline with the same date an
 
 ## Quick task editing
 
-Click a task in a list, board, or schedule to edit its title inline. Append `@tomorrow`, `!Monday 9am`, or `/Project name` to change its planned date, due date, or existing project; project suggestions and resolved dates appear before saving. Only explicitly supplied fields change—notes, reminders, status, and other dates stay intact. Press Return or **Save title** to save; **Cancel** or Escape discards the draft. Invalid shortcuts keep the draft open. Use the sliders button beside the title for the full details editor.
+Click a task in a list, board, or schedule to edit its title inline. Append `@tomorrow`, `!Monday 9am`, or `/Project name` to change its planned date, due date, or existing project; project suggestions and resolved dates appear before saving. Only explicitly supplied fields change—notes, reminders, status, and other dates stay intact. Press Return or **Save title** to save; **Cancel** or Escape discards the draft. On Mac, clicking outside the inline editor saves and closes it. Invalid shortcuts or a save failure keep the editor open with an error; clicking a suggestion or an editor action does not trigger click-away saving. Use the sliders button beside the title for the full details editor.
 
 Right-click a task (long-press on iPhone/iPad) for **Planned date**, **Due date**, and **Move to project** menus, plus completion and deletion. Date menus offer today, tomorrow, a week ahead, a custom date/time, and removal. Presets use the configured capture time. Removing a date pauses its relative reminders without deleting them.
 
@@ -96,6 +96,10 @@ apple/scripts/test-integration.sh
 # Optional iPhone UI smoke test (requires XcodeGen and an installed iOS runtime).
 # Uses a disposable simulator and separate app identity, never your real app data.
 apple/scripts/test-ui.sh
+
+# Mac task-editor regression: multiline notes, field layout, save/reopen, and clearing notes.
+# Uses a unique sandboxed app identity. Add UI_ACTION=build-for-testing to compile without launching.
+UI_PLATFORM=macOS bash apple/scripts/test-ui.sh
 
 # Compile both app destinations without provisioning.
 xcodebuild -project apple/Adhocly.xcodeproj -scheme Adhocly \

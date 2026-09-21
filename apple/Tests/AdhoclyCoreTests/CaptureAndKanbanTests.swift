@@ -223,7 +223,7 @@ final class KanbanStoreTests: XCTestCase {
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         json["formatVersion"] = 1
         var snapshot = json["snapshot"] as! [String: Any]
-        snapshot.removeValue(forKey: "boards"); snapshot.removeValue(forKey: "taskFields"); snapshot.removeValue(forKey: "protocolVersion")
+        snapshot.removeValue(forKey: "folders"); snapshot.removeValue(forKey: "boards"); snapshot.removeValue(forKey: "taskFields"); snapshot.removeValue(forKey: "protocolVersion")
         json["snapshot"] = snapshot
         var pending = json["pending"] as! [[String: Any]]
         var operation = pending[0]["operation"] as! [String: Any]
@@ -240,7 +240,9 @@ final class KanbanStoreTests: XCTestCase {
         XCTAssertEqual(restored.tasks[0].statusId, "todo")
         try restored.toggle(restored.tasks[0].id)
         let saved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
-        XCTAssertEqual(saved.formatVersion, 6)
+        XCTAssertEqual(saved.formatVersion, 7)
+        XCTAssertTrue(restored.folders.isEmpty)
+        XCTAssertNil(restored.projects[0].folderId)
         XCTAssertNil(saved.pending[0].operation.body.details)
         XCTAssertEqual(restored.tasks[0].details, "")
         XCTAssertNil(saved.pending[0].operation.body.reminders)

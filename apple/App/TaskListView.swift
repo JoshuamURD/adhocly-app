@@ -13,10 +13,17 @@ private struct BoardRequest: Identifiable {
     let original: KanbanBoard?
 }
 
+private struct FolderRequest: Identifiable {
+    var id: String { draft.id }
+    let draft: ProjectFolder
+    let original: ProjectFolder?
+}
+
 struct TaskListView: View {
     let model: AppModel
     let store: TaskStore
     @State private var selection: String? = "active"
+    @State private var projectPath: [String] = []
     @State private var taskFilter = "active"
     @State private var search = ""
     @State private var today = Date()
@@ -29,6 +36,8 @@ struct TaskListView: View {
     @State private var showReview = false
     @State private var showProperties = false
     @State private var showNewProject = false
+    @State private var folderEditor: FolderRequest?
+    @State private var deletingProject: Project?
     @State private var boardEditor: BoardRequest?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -99,6 +108,30 @@ struct TaskListView: View {
                 model.didSave()
             }
         }
+        .sheet(item: $folderEditor) { request in
+            FolderEditorView(model: model, store: store, draft: request.draft, original: request.original)
+        }
+        .confirmationDialog("Delete project?", isPresented: Binding(
+            get: { deletingProject != nil }, set: { if !$0 { deletingProject = nil } }
+        ), titleVisibility: .visible) {
+            if let project = deletingProject {
+                Button("Delete “\(project.name)”", role: .destructive) {
+                    model.perform { try store.deleteProject(project.id) }
+                    deletingProject = nil
+                }
+            }
+        } message: {
+            Text("Its tasks will be kept and moved to Inbox.")
+        }
+        .onChange(of: store.projects) { _, projects in
+            if projectPath.contains(where: { scope in !projects.contains { "project:\($0.id)" == scope } }) {
+                projectPath.removeAll()
+            }
+            if let selection, selection.hasPrefix("project:"),
+               !projects.contains(where: { "project:\($0.id)" == selection }) {
+                self.selection = "project:inbox"
+            }
+        }
         .sheet(item: $boardEditor) { request in
             BoardEditorView(model: model, store: store, draft: request.draft, original: request.original)
         }
@@ -122,7 +155,8 @@ struct TaskListView: View {
                 }
                 Section("Projects") {
                     projectLinks
-                    Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
+                    Button("New project", systemImage: "plus") { showNewProject = true }
+                    newFolderButton
                 }
             }
             .listStyle(.sidebar)
@@ -163,7 +197,7 @@ struct TaskListView: View {
                     .navigationDestination(for: String.self) { workspace($0) }
             }
             .tabItem { Label("Boards", systemImage: "rectangle.split.3x1") }
-            NavigationStack {
+            NavigationStack(path: $projectPath) {
                 directory(isBoards: false)
                     .navigationDestination(for: String.self) { workspace($0) }
             }
@@ -196,9 +230,14 @@ struct TaskListView: View {
     }
 
     private var projectLinks: some View {
-        ForEach(store.projects) { project in
-            sidebarLink(project.name, symbol: project.id == "inbox" ? "tray" : "folder",
-                        scope: "project:\(project.id)", count: store.tasks.filter { $0.projectId == project.id && !$0.completed }.count)
+        ProjectTreeView(model: model, store: store, parentId: nil,
+                        editFolder: { folderEditor = FolderRequest(draft: $0, original: $1) },
+                        deleteProject: { deletingProject = $0 })
+    }
+
+    private var newFolderButton: some View {
+        Button("New folder", systemImage: "folder.badge.plus") {
+            folderEditor = FolderRequest(draft: ProjectFolder(), original: nil)
         }
     }
 
@@ -220,15 +259,11 @@ struct TaskListView: View {
                         .frame(minHeight: 44)
                         .listRowBackground(AppStyle.surface)
                 } else {
-                    ForEach(store.projects) { project in
-                        NavigationLink(value: "project:\(project.id)") {
-                            let count = store.tasks.filter { $0.projectId == project.id && !$0.completed }.count
-                            directoryRow(project.name, subtitle: "\(count) open \(count == 1 ? "task" : "tasks")",
-                                         symbol: project.id == "inbox" ? "tray" : "folder")
-                        }
+                    projectLinks
+                    Button("New project", systemImage: "plus") { showNewProject = true }
+                        .frame(minHeight: 44)
                         .listRowBackground(AppStyle.surface)
-                    }
-                    Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
+                    newFolderButton
                         .frame(minHeight: 44)
                         .listRowBackground(AppStyle.surface)
                 }
@@ -309,9 +344,14 @@ struct TaskListView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
+                    newFolderButton
                     Button("New board", systemImage: "rectangle.split.3x1") { createBoard() }
                     Button("Task properties", systemImage: "tag") { showProperties = true }
                     if let selectedBoard { boardActions(selectedBoard) }
+                    if let project = store.projects.first(where: { "project:\($0.id)" == scope }) {
+                        ProjectActions(model: model, store: store, project: project,
+                                       deleteProject: { deletingProject = $0 })
+                    }
                     Divider()
                     Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await model.sync() } }
                         .disabled(store.isSyncing || store.serverURL.isEmpty)
@@ -514,6 +554,98 @@ struct TaskListView: View {
         } else if store.isSyncing || store.pendingCount > 0 {
             Label(store.isSyncing ? "Syncing…" : "\(store.pendingCount) changes waiting to sync", systemImage: "arrow.triangle.2.circlepath")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct ProjectActions: View {
+    let model: AppModel
+    let store: TaskStore
+    let project: Project
+    let deleteProject: (Project) -> Void
+
+    var body: some View {
+        if project.id != "inbox" {
+            Menu("Move to folder", systemImage: "folder") {
+                Button("Top level") { model.perform { try store.moveProject(project.id, to: nil) } }
+                    .disabled(project.folderId == nil)
+                ForEach(store.folders) { folder in
+                    Button(store.folderPath(folder.id)) {
+                        model.perform { try store.moveProject(project.id, to: folder.id) }
+                    }
+                    .disabled(project.folderId == folder.id)
+                }
+            }
+            Button("Delete project", systemImage: "trash", role: .destructive) { deleteProject(project) }
+        }
+    }
+}
+
+private struct ProjectTreeView: View {
+    let model: AppModel
+    let store: TaskStore
+    let parentId: String?
+    let editFolder: (ProjectFolder, ProjectFolder?) -> Void
+    let deleteProject: (Project) -> Void
+
+    var body: some View {
+        ForEach(store.folders.filter { $0.parentId == parentId }) { folder in
+            ProjectFolderRow(model: model, store: store, folder: folder,
+                             editFolder: editFolder, deleteProject: deleteProject)
+        }
+        ForEach(store.projects.filter { $0.folderId == parentId }) { project in
+            NavigationLink(value: "project:\(project.id)") {
+                Label {
+                    HStack {
+                        Text(project.name)
+                        Spacer()
+                        Text("\(store.tasks.filter { $0.projectId == project.id && !$0.completed }.count)")
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                } icon: { Image(systemName: project.id == "inbox" ? "tray" : "checklist") }
+            }
+            .tag("project:\(project.id)")
+            .contextMenu {
+                ProjectActions(model: model, store: store, project: project, deleteProject: deleteProject)
+            }
+            .swipeActions {
+                if project.id != "inbox" {
+                    Button("Delete", role: .destructive) { deleteProject(project) }
+                }
+            }
+        }
+    }
+}
+
+private struct ProjectFolderRow: View {
+    let model: AppModel
+    let store: TaskStore
+    let folder: ProjectFolder
+    let editFolder: (ProjectFolder, ProjectFolder?) -> Void
+    let deleteProject: (Project) -> Void
+    @AppStorage private var isExpanded: Bool
+
+    init(model: AppModel, store: TaskStore, folder: ProjectFolder,
+         editFolder: @escaping (ProjectFolder, ProjectFolder?) -> Void,
+         deleteProject: @escaping (Project) -> Void) {
+        self.model = model; self.store = store; self.folder = folder
+        self.editFolder = editFolder; self.deleteProject = deleteProject
+        _isExpanded = AppStorage(wrappedValue: true, "projectFolderExpanded.\(store.serverURL).\(folder.id)")
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            ProjectTreeView(model: model, store: store, parentId: folder.id,
+                            editFolder: editFolder, deleteProject: deleteProject)
+        } label: {
+            Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
+        }
+        .accessibilityIdentifier("project-folder-\(folder.id)")
+        .contextMenu {
+            Button("New subfolder", systemImage: "folder.badge.plus") {
+                editFolder(ProjectFolder(parentId: folder.id), nil)
+            }
+            Button("Edit folder", systemImage: "pencil") { editFolder(folder, folder) }
         }
     }
 }

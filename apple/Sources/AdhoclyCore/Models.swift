@@ -57,24 +57,39 @@ public struct TaskItem: Codable, Equatable, Identifiable, Sendable {
 public struct Project: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
-    public init(id: String, name: String) { self.id = id; self.name = name }
+    public var folderId: String?
+    public init(id: String, name: String, folderId: String? = nil) {
+        self.id = id; self.name = name; self.folderId = folderId
+    }
+}
+
+public struct ProjectFolder: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var parentId: String?
+
+    public init(id: String = UUID().uuidString.lowercased(), name: String = "", parentId: String? = nil) {
+        self.id = id; self.name = name; self.parentId = parentId
+    }
 }
 
 struct Snapshot: Codable, Sendable {
     var protocolVersion = 5
     var tasks: [TaskItem] = []
     var projects: [Project] = [Project(id: "inbox", name: "Inbox")]
+    var folders: [ProjectFolder] = []
     var versions: [String: Int64] = [:]
     var taskFields: [TaskField] = [.status]
     var boards: [KanbanBoard] = [.status]
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case tasks, projects, versions, taskFields, boards, protocolVersion }
+    private enum CodingKeys: String, CodingKey { case tasks, projects, folders, versions, taskFields, boards, protocolVersion }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         protocolVersion = try c.decodeIfPresent(Int.self, forKey: .protocolVersion) ?? 1
         tasks = try c.decode([TaskItem].self, forKey: .tasks)
         projects = try c.decode([Project].self, forKey: .projects)
+        folders = try c.decodeIfPresent([ProjectFolder].self, forKey: .folders) ?? []
         versions = try c.decode([String: Int64].self, forKey: .versions)
         taskFields = try c.decodeIfPresent([TaskField].self, forKey: .taskFields) ?? [.status]
         boards = try c.decodeIfPresent([KanbanBoard].self, forKey: .boards) ?? [.status]
@@ -95,6 +110,8 @@ struct MutationBody: Codable, Equatable, Sendable {
     var properties: [String: String]?
     var reminders: [CustomReminder]?
     var name: String?
+    var folderId: String?
+    var parentId: String?
     var kind: TaskField.Kind?
     var options: [FieldOption]?
     var fieldId: String?
@@ -141,6 +158,7 @@ struct PendingMutation: Codable, Sendable {
     var localField: TaskField?
     var localBoard: KanbanBoard?
     var localProject: Project?
+    var localFolder: ProjectFolder?
     var key: String { "\(entityKind ?? "tasks")/\(taskId)" }
 }
 
@@ -153,7 +171,7 @@ public struct SyncIssue: Codable, Sendable {
 }
 
 struct SavedState: Codable, Sendable {
-    var formatVersion = 6
+    var formatVersion = 7
     var serverURL = ""
     var snapshot = Snapshot()
     var pending: [PendingMutation] = []

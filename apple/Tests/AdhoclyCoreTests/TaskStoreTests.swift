@@ -53,9 +53,28 @@ private final class MockServer: @unchecked Sendable {
             guard snapshot.versions[key, default: 0] == operation.expectedVersion else {
                 return (409, Data("changed on another device".utf8))
             }
-            if parts[1] == "projects" {
-                snapshot.projects.removeAll { $0.id == id }
-                snapshot.projects.append(Project(id: id, name: operation.body.name!))
+            var changes: [String: Int64] = [:]
+            if parts[1] == "folders" {
+                snapshot.folders.removeAll { $0.id == id }
+                snapshot.folders.append(ProjectFolder(id: id, name: operation.body.name!, parentId: operation.body.parentId))
+            } else if parts[1] == "projects" {
+                if operation.method == "DELETE" {
+                    snapshot.projects.removeAll { $0.id == id }
+                    for index in snapshot.tasks.indices where snapshot.tasks[index].projectId == id {
+                        snapshot.tasks[index].projectId = "inbox"
+                        snapshot.tasks[index].project = "Inbox"
+                        let taskKey = "tasks/\(snapshot.tasks[index].id)"
+                        snapshot.versions[taskKey, default: 0] += 1
+                        changes[taskKey] = snapshot.versions[taskKey]
+                    }
+                } else if parts.last == "folder" {
+                    guard let index = snapshot.projects.firstIndex(where: { $0.id == id }) else { return (404, Data()) }
+                    snapshot.projects[index].folderId = operation.body.folderId
+                } else {
+                    let folderId = snapshot.projects.first { $0.id == id }?.folderId
+                    snapshot.projects.removeAll { $0.id == id }
+                    snapshot.projects.append(Project(id: id, name: operation.body.name!, folderId: folderId))
+                }
             } else if operation.method == "DELETE" {
                 snapshot.tasks.removeAll { $0.id == id }
             } else if parts.last == "toggle" {
@@ -80,7 +99,7 @@ private final class MockServer: @unchecked Sendable {
                 snapshot.tasks.append(task)
             }
             snapshot.versions[key, default: 0] += 1
-            let changes = [key: snapshot.versions[key]!]
+            changes[key] = snapshot.versions[key]!
             receipts[operation.id] = (operation, changes)
             if loseReply {
                 loseReply = false
@@ -179,6 +198,174 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(blocked.pendingCount, 0)
     }
 
+    func testFoldersAndProjectDeletionPersistAndReplayWithoutLosingTasks() async throws {
+        let server = MockServer(), file = file()
+        let (store, session) = try connectedStore(server: server, file: file)
+        let root = ProjectFolder(name: "Work"), child = ProjectFolder(name: "Clients")
+        try store.saveFolder(root)
+        try store.saveFolder(child)
+        var nested = child
+        nested.parentId = root.id
+        try store.saveFolder(nested, replacing: child)
+        let leaf = ProjectFolder(name: "Current", parentId: child.id)
+        try store.saveFolder(leaf)
+        XCTAssertEqual(store.folderPath(leaf.id), "Work / Clients / Current")
+        let project = try store.createProject(named: "Website")
+        try store.moveProject(project.id, to: leaf.id)
+        var task = TaskItem(title: "Keep this task", projectId: project.id, project: project.name)
+        task.details = "Keep the details too"
+        task.statusId = "complete"
+        task.reminders = [CustomReminder(at: "2027-01-01T09:00")]
+        try store.save(task)
+        await store.sync(token: "")
+        XCTAssertNil(store.issue)
+        XCTAssertNil(store.syncError)
+        XCTAssertEqual(store.pendingCount, 0)
+
+        try store.deleteProject(project.id)
+        let projected = try XCTUnwrap(store.tasks.first)
+        XCTAssertEqual(projected.projectId, "inbox")
+        XCTAssertEqual(projected.project, "Inbox")
+        XCTAssertTrue(projected.completed)
+        XCTAssertEqual(projected.details, task.details)
+        XCTAssertEqual(projected.reminders, task.reminders)
+        XCTAssertFalse(store.projects.contains { $0.id == project.id })
+        var edited = projected
+        edited.title = "Edited after deletion"
+        try store.save(edited, replacing: projected)
+        server.loseNextReply()
+        await store.sync(token: "")
+        let restored = try TaskStore(fileURL: file, session: session)
+        XCTAssertEqual(restored.tasks.first?.title, edited.title)
+        XCTAssertEqual(restored.tasks.first?.projectId, "inbox")
+        XCTAssertEqual(restored.folders, store.folders)
+        await restored.sync(token: "")
+        XCTAssertNil(restored.syncError)
+        XCTAssertNil(restored.issue)
+        XCTAssertEqual(restored.pendingCount, 0)
+        let last = Array(server.sent.suffix(3))
+        XCTAssertEqual(last[0], last[1], "Deletion retries must preserve the frozen request")
+        XCTAssertEqual(last[2].expectedVersion, 2, "Use the deletion receipt's task revision")
+        XCTAssertEqual(restored.tasks.first?.title, edited.title)
+    }
+
+    func testQueuedProjectCreateMoveUnfileDeleteAndTaskEditsSyncInOrder() async throws {
+        let server = MockServer()
+        let (store, _) = try connectedStore(server: server, file: file())
+        let folder = ProjectFolder(name: "Offline")
+        try store.saveFolder(folder)
+        let project = try store.createProject(named: "Temporary")
+        try store.moveProject(project.id, to: folder.id)
+        try store.moveProject(project.id, to: nil)
+        XCTAssertNil(store.projects.first { $0.id == project.id }?.folderId)
+        let task = TaskItem(title: "Saved offline", projectId: project.id, project: project.name)
+        try store.save(task)
+        try store.deleteProject(project.id)
+        try store.toggle(task.id)
+        await store.sync(token: "")
+        XCTAssertNil(store.issue)
+        XCTAssertNil(store.syncError)
+        XCTAssertEqual(store.pendingCount, 0)
+        XCTAssertEqual(store.tasks.first?.projectId, "inbox")
+        XCTAssertTrue(store.tasks.first?.completed == true)
+        XCTAssertEqual(server.sent.map(\.expectedVersion), [0, 0, 1, 2, 0, 3, 2])
+        XCTAssertNil(server.sent[3].body.folderId)
+    }
+
+    func testFolderValidationAndDiskFailureLeaveStateUntouched() throws {
+        let file = file(), store = try TaskStore(fileURL: self.file())
+        let root = ProjectFolder(name: "Work")
+        let child = ProjectFolder(name: "Clients", parentId: root.id)
+        let leaf = ProjectFolder(name: "Current", parentId: child.id)
+        for folder in [root, child, leaf] { try store.saveFolder(folder) }
+        for parent in [root.id, child.id, leaf.id, "missing"] {
+            var invalid = root
+            invalid.parentId = parent
+            XCTAssertFalse(store.canMoveFolder(root.id, to: parent))
+            XCTAssertThrowsError(try store.saveFolder(invalid, replacing: root))
+        }
+        XCTAssertThrowsError(try store.saveFolder(ProjectFolder(name: "  ")))
+        XCTAssertThrowsError(try store.saveFolder(ProjectFolder(name: "clients", parentId: root.id)))
+        try store.saveFolder(ProjectFolder(name: "Clients")) // Same name, different parent is allowed.
+        var renamed = child
+        renamed.name = "Accounts"
+        renamed.parentId = nil
+        try store.saveFolder(renamed, replacing: child)
+        XCTAssertEqual(store.folderPath(leaf.id), "Accounts / Current")
+        XCTAssertThrowsError(try store.saveFolder(child, replacing: child))
+        XCTAssertThrowsError(try store.deleteProject("inbox"))
+        XCTAssertThrowsError(try store.deleteProject("missing"))
+        XCTAssertThrowsError(try store.moveProject("inbox", to: root.id))
+        let project = try store.createProject(named: "Website")
+        XCTAssertThrowsError(try store.moveProject(project.id, to: "missing"))
+        // Replace the parent directory with a file to force writes to fail.
+        let blocked = try TaskStore(fileURL: file)
+        try blocked.createProject(named: "Keep project")
+        let before = blocked.projects
+        try FileManager.default.removeItem(at: file.deletingLastPathComponent())
+        try Data().write(to: file.deletingLastPathComponent())
+        XCTAssertThrowsError(try blocked.deleteProject(before.first { $0.id != "inbox" }!.id))
+        XCTAssertThrowsError(try blocked.saveFolder(root))
+        XCTAssertEqual(blocked.projects, before)
+        XCTAssertTrue(blocked.folders.isEmpty)
+    }
+
+    func testProjectDeletionDoesNotRebaseOverAnotherDevicesTaskEdit() async throws {
+        let server = MockServer()
+        let (store, _) = try connectedStore(server: server, file: file())
+        let project = try store.createProject(named: "Work")
+        let task = TaskItem(title: "Original", projectId: project.id, project: project.name)
+        try store.save(task)
+        await store.sync(token: "")
+        try store.deleteProject(project.id)
+        let original = store.tasks[0]
+        var local = original
+        local.title = "Local edit"
+        try store.save(local, replacing: original)
+        server.editOnAnotherDevice(id: task.id, title: "Remote edit")
+        await store.sync(token: "")
+        XCTAssertEqual(store.issue?.taskId, task.id)
+        XCTAssertEqual(store.serverTask(task.id)?.title, "Remote edit")
+        XCTAssertEqual(store.tasks[0].title, "Local edit")
+        XCTAssertEqual(store.tasks[0].projectId, "inbox")
+        XCTAssertEqual(server.sent.last?.expectedVersion, 1)
+    }
+
+    func testFolderAndProjectMoveConflictReviewPreservesRoutes() throws {
+        let file = file()
+        let store = try TaskStore(fileURL: file)
+        let folder = ProjectFolder(name: "Local folder")
+        try store.saveFolder(folder)
+        let project = try store.createProject(named: "Work")
+        try store.moveProject(project.id, to: folder.id)
+        // Simulate a downloaded rename conflicting with a queued project move.
+        var state = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        let folderMutation = state.pending[0]
+        state.snapshot.folders = [folder]
+        state.snapshot.projects.append(project)
+        state.pending = [state.pending.last!]
+        state.snapshot.versions["projects/\(project.id)"] = 2
+        state.issue = SyncIssue(taskId: project.id, message: "Conflict", entityKind: "projects")
+        try JSONEncoder().encode(state).write(to: file)
+        let restored = try TaskStore(fileURL: file)
+        try restored.resolveConfigurationIssue(keepLocal: true)
+        let resolved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
+        XCTAssertEqual(resolved.pending[0].operation.url.removingPercentEncoding, "/api/projects/\(project.id)/folder")
+        XCTAssertEqual(resolved.pending[0].operation.body.folderId, folder.id)
+        XCTAssertEqual(resolved.pending[0].operation.expectedVersion, 2)
+        XCTAssertNil(resolved.pending[0].operation.body.name)
+
+        state.pending = [folderMutation]
+        state.snapshot.folders = [ProjectFolder(id: folder.id, name: "Server folder")]
+        state.issue = SyncIssue(taskId: folder.id, message: "Conflict", entityKind: "folders")
+        try JSONEncoder().encode(state).write(to: file)
+        let review = try TaskStore(fileURL: file)
+        XCTAssertTrue(review.configurationDescription(local: true).contains("Local folder"))
+        XCTAssertTrue(review.configurationDescription(local: false).contains("Server folder"))
+        try review.resolveConfigurationIssue(keepLocal: false)
+        XCTAssertEqual(review.folders.first?.name, "Server folder")
+    }
+
     func testInlineEditPersistsWithoutReplacingDetailsAndRejectsStaleDraft() throws {
         let file = file()
         let store = try TaskStore(fileURL: file)
@@ -222,7 +409,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertTrue(restored.configurationDescription(local: false).contains("Server project"))
         try restored.resolveConfigurationIssue(keepLocal: true)
         let resolved = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: file))
-        XCTAssertEqual(resolved.pending[0].operation.url, "/api/projects/\(project.id)")
+        XCTAssertEqual(resolved.pending[0].operation.url.removingPercentEncoding, "/api/projects/\(project.id)")
         XCTAssertEqual(resolved.pending[0].operation.method, "PUT")
         XCTAssertEqual(resolved.pending[0].operation.expectedVersion, 1)
         XCTAssertEqual(restored.tasks.first?.id, task.id)
@@ -574,6 +761,87 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertNil(b.issue)
         XCTAssertEqual(b.pendingCount, 0)
         try b.saveField(originalStatus, replacing: b.statusField)
+        await b.sync(token: token)
+        XCTAssertNil(b.issue)
+    }
+
+    func testRustProjectFoldersDeletionAndConflicts() async throws {
+        guard let url = ProcessInfo.processInfo.environment["ADHOCLY_TEST_URL"] else {
+            throw XCTSkip("Run scripts/test-integration.sh to exercise project folders and deletion")
+        }
+        let token = ProcessInfo.processInfo.environment["ADHOCLY_TEST_TOKEN"] ?? ""
+        let file = file(), suffix = UUID().uuidString
+        let a = try TaskStore(fileURL: file), b = try TaskStore(fileURL: self.file())
+        try a.configure(serverURL: url)
+        try b.configure(serverURL: url)
+        let root = ProjectFolder(name: "Work \(suffix)")
+        let child = ProjectFolder(name: "Clients", parentId: root.id)
+        let leaf = ProjectFolder(name: "Current", parentId: child.id)
+        for folder in [root, child, leaf] { try a.saveFolder(folder) }
+        let project = try a.createProject(named: "Website \(suffix)")
+        try a.moveProject(project.id, to: leaf.id)
+        var task = TaskItem(title: "Keep after deleting project", projectId: project.id, project: project.name)
+        task.details = "No data loss"
+        task.statusId = "complete"
+        task.reminders = [CustomReminder(at: "2027-01-01T09:00")]
+        try a.save(task)
+        let restored = try TaskStore(fileURL: file)
+        await restored.sync(token: token)
+        XCTAssertNil(restored.syncError)
+        XCTAssertNil(restored.issue)
+        XCTAssertEqual(restored.pendingCount, 0)
+        await b.sync(token: token)
+        XCTAssertEqual(b.projects.first { $0.id == project.id }?.folderId, leaf.id)
+        XCTAssertEqual(b.folderPath(leaf.id), "Work \(suffix) / Clients / Current")
+
+        try b.moveProject(project.id, to: root.id)
+        try restored.moveProject(project.id, to: nil)
+        await restored.sync(token: token)
+        await b.sync(token: token)
+        XCTAssertEqual(b.issue?.entityKind, "projects")
+        try b.resolveConfigurationIssue(keepLocal: true)
+        await b.sync(token: token)
+        XCTAssertNil(b.issue)
+        XCTAssertNil(b.syncError)
+        XCTAssertEqual(b.projects.first { $0.id == project.id }?.folderId, root.id)
+        XCTAssertEqual(b.projects.first { $0.id == project.id }?.name, project.name)
+
+        var remote = child
+        remote.name = "Remote clients \(suffix)"
+        remote.parentId = nil
+        try restored.saveFolder(remote, replacing: child)
+        await restored.sync(token: token)
+        var local = child
+        local.name = "Local clients"
+        try b.saveFolder(local, replacing: child)
+        await b.sync(token: token)
+        XCTAssertEqual(b.issue?.entityKind, "folders")
+        try b.resolveConfigurationIssue(keepLocal: true)
+        await b.sync(token: token)
+        XCTAssertNil(b.issue)
+        XCTAssertNil(b.syncError)
+        XCTAssertEqual(b.folderPath(leaf.id), "Work \(suffix) / Local clients / Current")
+
+        await restored.sync(token: token)
+        try restored.deleteProject(project.id)
+        let original = try XCTUnwrap(restored.tasks.first { $0.id == task.id })
+        XCTAssertEqual(original.projectId, "inbox")
+        var edited = original
+        edited.title = "Edited after project deletion"
+        try restored.save(edited, replacing: original)
+        await restored.sync(token: token)
+        XCTAssertNil(restored.issue)
+        XCTAssertNil(restored.syncError)
+        XCTAssertEqual(restored.pendingCount, 0)
+        await b.sync(token: token)
+        XCTAssertFalse(b.projects.contains { $0.id == project.id })
+        let kept = try XCTUnwrap(b.tasks.first { $0.id == task.id })
+        XCTAssertEqual(kept.title, edited.title)
+        XCTAssertEqual(kept.projectId, "inbox")
+        XCTAssertEqual(kept.details, task.details)
+        XCTAssertEqual(kept.reminders, task.reminders)
+        XCTAssertTrue(kept.completed)
+        try b.delete(task.id)
         await b.sync(token: token)
         XCTAssertNil(b.issue)
     }

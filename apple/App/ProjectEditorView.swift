@@ -1,3 +1,4 @@
+import AdhoclyCore
 import SwiftUI
 
 struct ProjectEditorView: View {
@@ -48,6 +49,58 @@ struct ProjectEditorView: View {
     private func create() {
         do {
             try save(name)
+            dismiss()
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct FolderEditorView: View {
+    let model: AppModel
+    let store: TaskStore
+    @State var draft: ProjectFolder
+    let original: ProjectFolder?
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isFocused: Bool
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Folder name", text: $draft.name)
+                    .focused($isFocused)
+                    .accessibilityLabel("Folder name")
+                    .onSubmit(save)
+                Picker("Parent folder", selection: $draft.parentId) {
+                    Text("Top level").tag(String?.none)
+                    ForEach(store.folders.filter { store.canMoveFolder(draft.id, to: $0.id) }) { folder in
+                        Text(store.folderPath(folder.id)).tag(Optional(folder.id))
+                    }
+                }
+                if let error { Text(error).foregroundStyle(.red) }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background(AppStyle.canvas)
+            .navigationTitle(original == nil ? "New folder" : "Edit folder")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(original == nil ? "Create folder" : "Save", action: save)
+                        .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .onAppear { isFocused = true }
+        #if os(macOS)
+        .frame(width: 460, height: 300)
+        #endif
+    }
+
+    private func save() {
+        do {
+            try store.saveFolder(draft, replacing: original)
+            model.didSave()
             dismiss()
         } catch { self.error = error.localizedDescription }
     }

@@ -1,12 +1,72 @@
 import AdhoclyCore
 import SwiftUI
 
+struct EditorRequest: Identifiable {
+    var id: String { draft.id }
+    let draft: TaskItem
+    let original: TaskItem?
+}
+
+extension View {
+    func taskEditor(model: AppModel, store: TaskStore, request: Binding<EditorRequest?>) -> some View {
+        modifier(TaskEditorPresentation(model: model, store: store, request: request))
+    }
+}
+
+private struct TaskEditorPresentation: ViewModifier {
+    let model: AppModel
+    let store: TaskStore
+    @Binding var request: EditorRequest?
+    @State private var activeRequest: EditorRequest?
+    @State private var isDirty = false
+    @State private var confirmDiscard = false
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content.inspector(isPresented: Binding(
+            get: { activeRequest != nil }, set: { if !$0 { request = nil } }
+        )) {
+            if let activeRequest {
+                editor(activeRequest)
+                    .id(activeRequest.id)
+                    .inspectorColumnWidth(min: 360, ideal: 440, max: 600)
+                    .interactiveDismissDisabled(isDirty)
+            }
+        }
+        .onChange(of: request?.id, initial: true) { _, id in
+            guard id != activeRequest?.id else { return }
+            if isDirty { confirmDiscard = true }
+            else { activeRequest = request }
+        }
+        .confirmationDialog("Discard unsaved task changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard changes", role: .destructive) {
+                isDirty = false
+                activeRequest = request
+            }
+            Button("Keep editing", role: .cancel) { request = activeRequest }
+        }
+        #else
+        content.sheet(item: $request) { editor($0) }
+        #endif
+    }
+
+    private func editor(_ request: EditorRequest) -> some View {
+        TaskEditorView(model: model, store: store, draft: request.draft, original: request.original,
+                       onEdit: { isDirty = $0 != request.draft }) {
+            isDirty = false
+            activeRequest = nil
+            self.request = nil
+        }
+    }
+}
+
 struct TaskEditorView: View {
     let model: AppModel
     let store: TaskStore
     @State var draft: TaskItem
     let original: TaskItem?
-    @Environment(\.dismiss) private var dismiss
+    let onEdit: (TaskItem) -> Void
+    let dismiss: () -> Void
     @State private var error: String?
     @State private var showNewProject = false
     @State private var showContexts = false
@@ -26,6 +86,7 @@ struct TaskEditorView: View {
             }
             #endif
         }
+        .onChange(of: draft) { _, draft in onEdit(draft) }
         .sheet(isPresented: $showContexts) {
             ContextAttachmentsView(model: model, store: store, owner: "tasks:\(draft.id)", title: draft.title)
         }
@@ -38,7 +99,7 @@ struct TaskEditorView: View {
             }
         }
         #if os(macOS)
-        .frame(width: 600, height: 720)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         #endif
     }
 

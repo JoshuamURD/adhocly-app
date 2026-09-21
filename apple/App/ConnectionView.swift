@@ -104,7 +104,7 @@ struct SyncReviewView: View {
     @State private var error: String?
     @State private var confirmDiscard = false
     @State private var confirmKeep = false
-    @State private var editingTask: TaskItem?
+    @State private var editingTask: EditorRequest?
 
     var body: some View {
         NavigationStack {
@@ -118,7 +118,7 @@ struct SyncReviewView: View {
                         if issue.isTask {
                             let task = store.tasks.first { $0.id == issue.taskId }
                             summary(task)
-                            if let task { Button("Edit local task") { editingTask = task } }
+                            if let task { Button("Edit local task") { editingTask = EditorRequest(draft: task, original: task) } }
                         } else { Text(store.configurationDescription(local: true)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                     }
                     Section("Last downloaded server version") {
@@ -152,10 +152,10 @@ struct SyncReviewView: View {
                 Button("Keep my configuration", role: .destructive) { resolve(copy: true) }
             }
         }
-        .sheet(item: $editingTask) { task in TaskEditorView(model: model, store: store, draft: task, original: task) }
         #if os(macOS)
         .frame(width: 540, height: 640)
         #endif
+        .taskEditor(model: model, store: store, request: $editingTask)
     }
 
     @ViewBuilder private func summary(_ task: TaskItem?) -> some View {

@@ -1,12 +1,6 @@
 import AdhoclyCore
 import SwiftUI
 
-private struct EditorRequest: Identifiable {
-    var id: String { draft.id }
-    let draft: TaskItem
-    let original: TaskItem?
-}
-
 private struct BoardRequest: Identifiable {
     var id: String { draft.id }
     let draft: KanbanBoard
@@ -108,9 +102,7 @@ struct TaskListView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { today = Date() }
         }
-        .sheet(item: $editor) { request in
-            TaskEditorView(model: model, store: store, draft: request.draft, original: request.original)
-        }
+        .taskEditor(model: model, store: store, request: $editor)
         .sheet(isPresented: $showConnection) { ConnectionView(model: model, store: store) }
         .sheet(isPresented: $showReview) { SyncReviewView(model: model, store: store) }
         .sheet(item: $contextRequest) { request in

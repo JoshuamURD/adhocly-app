@@ -2,6 +2,54 @@
 import XCTest
 
 final class TaskEditorTests: XCTestCase {
+    @MainActor func testTaskDetailsUseSidePanelAndSwitchWithoutLosingEdits() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let suffix = UUID().uuidString.prefix(6)
+        let first = "Panel A \(suffix)", second = "Panel B \(suffix)"
+        let capture = app.textFields["Quick capture. Exclamation mark for due date, at sign for planned date, slash for project."]
+        XCTAssertTrue(capture.waitForExistence(timeout: 5))
+        for name in [first, second] {
+            capture.click()
+            capture.typeText(name)
+            app.buttons["Add"].click()
+        }
+        let title = app.textFields["Task title"]
+        let firstDetails = app.buttons["Details for \(first)"]
+        let secondDetails = app.buttons["Details for \(second)"]
+        firstDetails.click()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.sheets.count, 0, "Task details must not open a modal")
+        XCTAssertTrue(secondDetails.isHittable, "The workspace stays interactive")
+        XCTAssertGreaterThan(title.frame.minX, secondDetails.frame.maxX, "Details sit to the right of the task list")
+        XCTAssertEqual(title.value as? String, first)
+        secondDetails.click()
+        XCTAssertEqual(title.value as? String, second, "Switching tasks resets the editor draft")
+
+        let details = app.textViews["Task details"]
+        details.click()
+        details.typeText("Keep these notes")
+        firstDetails.click()
+        app.sheets.buttons["Keep editing"].click()
+        XCTAssertEqual(title.value as? String, second)
+        XCTAssertEqual(details.value as? String, "Keep these notes")
+        firstDetails.click()
+        app.sheets.buttons["Discard changes"].click()
+        XCTAssertEqual(title.value as? String, first)
+        XCTAssertEqual(details.value as? String, "")
+        details.click()
+        details.typeText("Saved from the panel")
+        app.buttons["Save"].click()
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        firstDetails.click()
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        XCTAssertEqual(details.value as? String, "Saved from the panel")
+        app.buttons["Cancel"].click()
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(capture.isHittable)
+    }
+
     @MainActor func testReusableContextAppearsOnTask() {
         continueAfterFailure = false
         let app = XCUIApplication()

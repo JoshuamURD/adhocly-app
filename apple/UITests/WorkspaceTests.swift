@@ -1,6 +1,48 @@
 import XCTest
 
 final class WorkspaceTests: XCTestCase {
+    @MainActor func testContextAndContactPages() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        app.tabBars.buttons["Contexts"].tap()
+        XCTAssertTrue(app.navigationBars["Contexts & contacts"].waitForExistence(timeout: 5))
+        app.buttons["new-context"].tap()
+        app.buttons["Blank context"].tap()
+        let name = "Context \(UUID().uuidString.prefix(6))"
+        let input = app.textFields["Context name"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap()
+        input.typeText(name)
+        app.buttons["Save"].tap()
+        app.buttons[name].tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["context-task-filter"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Contexts"].isSelected)
+        app.buttons["Edit context"].tap()
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+        app.navigationBars.buttons["Contexts & contacts"].tap()
+        app.buttons["New contact"].tap()
+        let contactName = app.textFields["Name"]
+        XCTAssertTrue(contactName.waitForExistence(timeout: 5))
+        contactName.tap()
+        contactName.typeText("Client \(name)")
+        app.textFields["Email"].tap()
+        app.textFields["Email"].typeText("client@example.com")
+        app.buttons["Save"].tap()
+        app.staticTexts["Client \(name)"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Client \(name)"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "client@example.com", "client@example.com")
+        ).firstMatch.exists)
+        app.buttons["Edit contact"].tap()
+        XCTAssertTrue(app.textFields["Email"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["Email"].value as? String, "client@example.com")
+        app.buttons["Cancel"].tap()
+        screenshot("iPhone — Contact page", app: app)
+    }
+
     @MainActor func testNavigationCaptureAndCompletion() throws {
         continueAfterFailure = false
         let app = XCUIApplication()

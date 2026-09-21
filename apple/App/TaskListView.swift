@@ -42,6 +42,7 @@ struct TaskListView: View {
     @State private var showConnection = false
     @State private var showReview = false
     @State private var showProperties = false
+    @State private var contextRequest: ContextRequest?
     @State private var showNewProject = false
     @State private var folderEditor: FolderRequest?
     @State private var deletingProject: Project?
@@ -112,6 +113,9 @@ struct TaskListView: View {
         }
         .sheet(isPresented: $showConnection) { ConnectionView(model: model, store: store) }
         .sheet(isPresented: $showReview) { SyncReviewView(model: model, store: store) }
+        .sheet(item: $contextRequest) { request in
+            ContextAttachmentsView(model: model, store: store, owner: request.id, title: request.title)
+        }
         .sheet(isPresented: $showProperties) { PropertiesView(model: model, store: store) }
         .sheet(isPresented: $showNewProject) {
             ProjectEditorView { name in
@@ -157,6 +161,9 @@ struct TaskListView: View {
                         sidebarLink(window.name, symbol: window == .today ? "sun.max" : window == .tomorrow ? "sunrise" : "calendar.badge.clock",
                                     scope: window.rawValue, count: tasks(for: window.rawValue).count)
                     }
+                    NavigationLink(value: "contexts") { Label("Contexts & contacts", systemImage: "square.stack.3d.up") }
+                        .tag("contexts")
+                        .accessibilityIdentifier("workspace-contexts")
                     NavigationLink(value: "schedule") { Label("Schedule", systemImage: "calendar") }
                         .tag("schedule")
                     sidebarLink("To do", symbol: "checklist", scope: "active", count: store.tasks.filter { !$0.completed }.count)
@@ -217,7 +224,8 @@ struct TaskListView: View {
                 #endif
             }
         } detail: {
-            workspace(selection ?? "active")
+            if selection == "contexts" { contextNavigation }
+            else { workspace(selection ?? "active") }
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -247,9 +255,27 @@ struct TaskListView: View {
             }
             .tabItem { Label("Projects", systemImage: "folder") }
             .tag("projects")
+            contextNavigation
+                .tabItem { Label("Contexts", systemImage: "square.stack.3d.up") }
+                .tag("contexts")
         }
     }
     #endif
+
+    private var contextNavigation: some View {
+        NavigationStack {
+            ContextLibraryView(model: model, store: store,
+                               openProject: { openProject($0) },
+                               editTask: { editor = EditorRequest(draft: $0, original: $0) })
+        }
+    }
+
+    private func openContextWorkspace() {
+        search = ""
+        searchPresented = false
+        selection = "contexts"
+        selectedTab = "contexts"
+    }
 
     private func sidebarLink(_ title: String, symbol: String, scope: String, count: Int) -> some View {
         NavigationLink(value: scope) {
@@ -267,6 +293,7 @@ struct TaskListView: View {
             } icon: { Image(systemName: symbol) }
         }
         .tag(scope)
+        .accessibilityIdentifier("workspace-\(scope)")
     }
 
     private var boardLinks: some View {
@@ -282,7 +309,11 @@ struct TaskListView: View {
     private var projectLinks: some View {
         ProjectTreeView(model: model, store: store, parentId: nil,
                         editFolder: { folderEditor = FolderRequest(draft: $0, original: $1) },
-                        deleteProject: { deletingProject = $0 })
+                        deleteProject: { deletingProject = $0 }, editContexts: openContexts)
+    }
+
+    private func openContexts(_ owner: String, _ title: String) {
+        contextRequest = ContextRequest(id: owner, title: title)
     }
 
     private var newFolderButton: some View {
@@ -319,6 +350,7 @@ struct TaskListView: View {
                         .frame(minHeight: 44)
                         .listRowBackground(AppStyle.surface)
                 } else {
+                    Button("Contexts & contacts", systemImage: "square.stack.3d.up", action: openContextWorkspace)
                     projectLinks
                     Button("New project", systemImage: "plus") { showNewProject = true }
                         .frame(minHeight: 44)
@@ -414,11 +446,12 @@ struct TaskListView: View {
                     Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
                     newFolderButton
                     Button("New board", systemImage: "rectangle.split.3x1") { createBoard() }
+                    Button("Contexts & contacts", systemImage: "square.stack.3d.up", action: openContextWorkspace)
                     Button("Task properties", systemImage: "tag") { showProperties = true }
                     if let selectedBoard { boardActions(selectedBoard) }
                     if let project = store.projects.first(where: { "project:\($0.id)" == scope }) {
                         ProjectActions(model: model, store: store, project: project,
-                                       deleteProject: { deletingProject = $0 })
+                                       deleteProject: { deletingProject = $0 }, editContexts: openContexts)
                     }
                     Divider()
                     Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await model.sync() } }
@@ -684,6 +717,7 @@ struct TaskListView: View {
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(AppStyle.canvas, in: RoundedRectangle(cornerRadius: 4))
                     }
+                    TaskContextLabel(store: store, task: task)
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 12) { taskMetadata(task) }
                         VStack(alignment: .leading, spacing: 5) { taskMetadata(task) }
@@ -695,6 +729,7 @@ struct TaskListView: View {
                     Text(task.title).font(.body.weight(.medium))
                         .strikethrough(task.completed)
                         .foregroundStyle(task.completed ? .secondary : .primary)
+                    TaskContextLabel(store: store, task: task)
                     Text("\(task.project) · \(store.statusName(task.statusId))")
                         .font(.caption).foregroundStyle(.secondary)
                     if !task.details.isEmpty {
@@ -800,8 +835,11 @@ private struct ProjectActions: View {
     let store: TaskStore
     let project: Project
     let deleteProject: (Project) -> Void
+    let editContexts: (String, String) -> Void
 
     var body: some View {
+        AttachContextMenu(model: model, store: store, owner: "projects:\(project.id)")
+        Button("Contexts…", systemImage: "square.stack.3d.up") { editContexts("projects:\(project.id)", project.name) }
         if project.id != "inbox" {
             Menu("Move to folder", systemImage: "folder") {
                 Button("Top level") { model.perform { try store.moveProject(project.id, to: nil) } }
@@ -824,11 +862,12 @@ private struct ProjectTreeView: View {
     let parentId: String?
     let editFolder: (ProjectFolder, ProjectFolder?) -> Void
     let deleteProject: (Project) -> Void
+    let editContexts: (String, String) -> Void
 
     var body: some View {
         ForEach(store.folders.filter { $0.parentId == parentId }) { folder in
             ProjectFolderRow(model: model, store: store, folder: folder,
-                             editFolder: editFolder, deleteProject: deleteProject)
+                             editFolder: editFolder, deleteProject: deleteProject, editContexts: editContexts)
         }
         ForEach(store.projects.filter { $0.folderId == parentId }) { project in
             NavigationLink(value: "project:\(project.id)") {
@@ -842,8 +881,9 @@ private struct ProjectTreeView: View {
                 } icon: { Image(systemName: project.id == "inbox" ? "tray" : "checklist") }
             }
             .tag("project:\(project.id)")
+            .accessibilityIdentifier("project-\(project.id)")
             .contextMenu {
-                ProjectActions(model: model, store: store, project: project, deleteProject: deleteProject)
+                ProjectActions(model: model, store: store, project: project, deleteProject: deleteProject, editContexts: editContexts)
             }
             .swipeActions {
                 if project.id != "inbox" {
@@ -860,20 +900,21 @@ private struct ProjectFolderRow: View {
     let folder: ProjectFolder
     let editFolder: (ProjectFolder, ProjectFolder?) -> Void
     let deleteProject: (Project) -> Void
+    let editContexts: (String, String) -> Void
     @AppStorage private var isExpanded: Bool
 
     init(model: AppModel, store: TaskStore, folder: ProjectFolder,
          editFolder: @escaping (ProjectFolder, ProjectFolder?) -> Void,
-         deleteProject: @escaping (Project) -> Void) {
+         deleteProject: @escaping (Project) -> Void, editContexts: @escaping (String, String) -> Void) {
         self.model = model; self.store = store; self.folder = folder
-        self.editFolder = editFolder; self.deleteProject = deleteProject
+        self.editFolder = editFolder; self.deleteProject = deleteProject; self.editContexts = editContexts
         _isExpanded = AppStorage(wrappedValue: true, "projectFolderExpanded.\(store.serverURL).\(folder.id)")
     }
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             ProjectTreeView(model: model, store: store, parentId: folder.id,
-                            editFolder: editFolder, deleteProject: deleteProject)
+                            editFolder: editFolder, deleteProject: deleteProject, editContexts: editContexts)
         } label: {
             Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
         }
@@ -883,6 +924,7 @@ private struct ProjectFolderRow: View {
                 editFolder(ProjectFolder(parentId: folder.id), nil)
             }
             Button("Edit folder", systemImage: "pencil") { editFolder(folder, folder) }
+            Button("Contexts…", systemImage: "square.stack.3d.up") { editContexts("folders:\(folder.id)", folder.name) }
         }
     }
 }

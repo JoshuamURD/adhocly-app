@@ -156,6 +156,7 @@ struct KanbanView: View {
                         .foregroundStyle(task.completed ? .secondary : .primary)
                     Label(task.project, systemImage: "folder").font(.caption).foregroundStyle(.secondary)
                         .padding(.bottom, 4)
+                    TaskContextLabel(store: store, task: task)
                     if !task.details.isEmpty {
                         Text(task.details).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }

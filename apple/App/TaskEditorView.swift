@@ -9,6 +9,7 @@ struct TaskEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var showNewProject = false
+    @State private var showContexts = false
 
     var body: some View {
         Group {
@@ -24,6 +25,9 @@ struct TaskEditorView: View {
                     }
             }
             #endif
+        }
+        .sheet(isPresented: $showContexts) {
+            ContextAttachmentsView(model: model, store: store, owner: "tasks:\(draft.id)", title: draft.title)
         }
         .sheet(isPresented: $showNewProject) {
             ProjectEditorView { name in
@@ -131,6 +135,14 @@ struct TaskEditorView: View {
                 Button("New project", systemImage: "folder.badge.plus") { showNewProject = true }
                 Picker(store.statusField.name, selection: $draft.statusId) {
                     ForEach(store.statusField.options) { option in Text(option.name).tag(option.id) }
+                }
+            }
+            Section("Contexts") {
+                TaskContextSection(store: store, task: draft)
+                if original != nil && draft.projectId == original?.projectId {
+                    Button("Attach or override contexts…") { showContexts = true }
+                } else {
+                    Text("Save the task and its project before attaching or overriding contexts.").font(.caption).foregroundStyle(.secondary)
                 }
             }
             if store.taskFields.contains(where: { $0.id != "status" }) {

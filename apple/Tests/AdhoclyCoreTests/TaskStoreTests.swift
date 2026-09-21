@@ -547,7 +547,7 @@ final class TaskStoreTests: XCTestCase {
 
     func testOlderServerCannotSilentlyDiscardReminders() async throws {
         let server = MockServer()
-        server.protocolVersion(4)
+        server.protocolVersion(5)
         let (store, _) = try connectedStore(server: server, file: file())
         var task = TaskItem(title: "Keep my status")
         task.statusId = "doing"
@@ -557,7 +557,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertTrue(server.sent.isEmpty)
         XCTAssertEqual(store.pendingCount, 1)
         XCTAssertTrue(store.syncError?.contains("Update the Rust server") == true)
-        server.protocolVersion(5)
+        server.protocolVersion(6)
         await store.sync(token: "")
         XCTAssertEqual(store.pendingCount, 0)
         XCTAssertEqual(store.tasks[0].statusId, "doing")

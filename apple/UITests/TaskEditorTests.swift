@@ -2,6 +2,83 @@
 import XCTest
 
 final class TaskEditorTests: XCTestCase {
+    @MainActor func testReusableContextAppearsOnTask() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let name = "Matter \(UUID().uuidString.prefix(6))"
+        app.descendants(matching: .any)["workspace-contexts"].firstMatch.click()
+        XCTAssertEqual(app.sheets.count, 0, "Contexts is a workspace, not a modal")
+        app.descendants(matching: .any)["new-context"].firstMatch.click()
+        app.menuItems["Blank context"].click()
+        let contextName = app.textFields["Context name"]
+        XCTAssertTrue(contextName.waitForExistence(timeout: 5))
+        contextName.click()
+        contextName.typeText(name)
+        app.menuButtons["Add field"].click()
+        app.menuItems["Identifier"].click()
+        let fieldName = app.textFields["Field name"]
+        fieldName.click()
+        fieldName.typeText("Matter number")
+        let value = app.textFields["Matter number"]
+        value.click()
+        value.typeText("MAT-123")
+        app.buttons["Save"].click()
+        XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["workspace-active"].firstMatch.click()
+        app.buttons["new-task"].click()
+        let title = app.textFields["Task title"]
+        title.click()
+        title.typeText(name)
+        app.buttons["Save"].click()
+        let details = app.buttons["Details for \(name)"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        app.buttons["Edit title: \(name)"].rightClick()
+        app.menuItems["Attach context"].click()
+        app.menuItems[name].click()
+        XCTAssertEqual(app.sheets.count, 0, "Quick attachment saves without opening an editor")
+        app.buttons["Edit title: \(name)"].rightClick()
+        app.menuItems["Attach context"].click()
+        XCTAssertFalse(app.menuItems[name].isEnabled, "A direct attachment cannot be added twice")
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey(.escape, modifierFlags: [])
+        details.click()
+        app.buttons["Attach or override contexts…"].click()
+        XCTAssertTrue(app.staticTexts["MAT-123"].waitForExistence(timeout: 5))
+        app.buttons["save-context-attachments"].click()
+        XCTAssertTrue(app.staticTexts["Matter number: MAT-123"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].click()
+        XCTAssertEqual(app.buttons["Edit title: \(name)"].value as? String, "\(name) · MAT-123")
+
+        app.descendants(matching: .any)["workspace-contexts"].firstMatch.click()
+        app.buttons[name].click()
+        XCTAssertEqual(app.sheets.count, 0)
+        XCTAssertTrue(app.buttons["Edit title: \(name)"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Attached to task"].exists)
+        XCTAssertTrue(app.buttons["Open project Inbox"].exists)
+        let filter = app.textFields["Filter tasks in this context"]
+        filter.click()
+        filter.typeText("does not match")
+        XCTAssertTrue(app.staticTexts["No tasks match these filters."].exists)
+        filter.typeKey("a", modifierFlags: .command)
+        filter.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(app.buttons["Edit title: \(name)"].exists)
+        app.buttons["Open project Inbox"].click()
+        XCTAssertTrue(app.buttons["new-task"].waitForExistence(timeout: 5))
+        app.buttons["project-inbox"].rightClick()
+        app.menuItems["Attach context"].click()
+        app.menuItems[name].click()
+        XCTAssertEqual(app.sheets.count, 0)
+        app.buttons["new-task"].click()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.click()
+        title.typeText("Inherited \(name)")
+        app.buttons["Save"].click()
+        let inherited = app.buttons["Edit title: Inherited \(name)"]
+        XCTAssertTrue(inherited.waitForExistence(timeout: 5))
+        XCTAssertEqual(inherited.value as? String, "\(name) · MAT-123")
+    }
+
     @MainActor func testInlineEditingClickAwayAndValidation() {
         continueAfterFailure = false
         let app = XCUIApplication()

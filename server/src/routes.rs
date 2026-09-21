@@ -12,6 +12,7 @@ use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
+    contexts,
     error::AppError,
     folders::{self, Folder, FolderInput},
     kanban::{self, Board, FieldOption, TaskField},
@@ -68,6 +69,9 @@ pub(crate) struct ApiDoc;
 fn api_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
+        .routes(routes!(contexts::save_context, contexts::delete_context))
+        .routes(routes!(contexts::save_contact, contexts::delete_contact))
+        .routes(routes!(contexts::save_links))
         .routes(routes!(sync::get_snapshot, sync::apply))
         .routes(routes!(kanban::list_fields, kanban::create_field))
         .routes(routes!(kanban::update_field))

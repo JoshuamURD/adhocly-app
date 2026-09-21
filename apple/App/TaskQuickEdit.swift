@@ -36,6 +36,7 @@ struct TaskQuickEdit<Content: View>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Edit title: \(task.title)")
+                .accessibilityValue(store.contextSummary(for: task))
                 .help("Edit title · @ planned · ! due · / project")
             }
             #if os(macOS)
@@ -51,6 +52,8 @@ struct TaskQuickEdit<Content: View>: View {
             Divider()
             dateMenu(isDue: false)
             dateMenu(isDue: true)
+            AttachContextMenu(model: model, store: store, owner: "tasks:\(task.id)")
+                .disabled(original != nil)
             Menu("Move to project", systemImage: "folder") {
                 ForEach(store.projects) { project in
                     Button {

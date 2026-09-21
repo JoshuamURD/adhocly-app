@@ -74,7 +74,10 @@ public struct ProjectFolder: Codable, Equatable, Identifiable, Sendable {
 }
 
 struct Snapshot: Codable, Sendable {
-    var protocolVersion = 5
+    var protocolVersion = 6
+    var contexts: [WorkContext] = []
+    var contacts: [Contact] = []
+    var contextLinks: [ContextLinks] = []
     var tasks: [TaskItem] = []
     var projects: [Project] = [Project(id: "inbox", name: "Inbox")]
     var folders: [ProjectFolder] = []
@@ -83,10 +86,13 @@ struct Snapshot: Codable, Sendable {
     var boards: [KanbanBoard] = [.status]
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case tasks, projects, folders, versions, taskFields, boards, protocolVersion }
+    private enum CodingKeys: String, CodingKey { case tasks, projects, folders, versions, taskFields, boards, protocolVersion, contexts, contacts, contextLinks }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         protocolVersion = try c.decodeIfPresent(Int.self, forKey: .protocolVersion) ?? 1
+        contexts = try c.decodeIfPresent([WorkContext].self, forKey: .contexts) ?? []
+        contacts = try c.decodeIfPresent([Contact].self, forKey: .contacts) ?? []
+        contextLinks = try c.decodeIfPresent([ContextLinks].self, forKey: .contextLinks) ?? []
         tasks = try c.decode([TaskItem].self, forKey: .tasks)
         projects = try c.decode([Project].self, forKey: .projects)
         folders = try c.decodeIfPresent([ProjectFolder].self, forKey: .folders) ?? []
@@ -117,6 +123,12 @@ struct MutationBody: Codable, Equatable, Sendable {
     var fieldId: String?
     var sortMode: KanbanSort?
     var manualOrder: [String]?
+    var fields: [ContextField]?
+    var email: String?
+    var phone: String?
+    var notes: String?
+    var contextIds: [String]?
+    var overrides: [String: [String: String]]?
 
     init() {}
 
@@ -159,6 +171,9 @@ struct PendingMutation: Codable, Sendable {
     var localBoard: KanbanBoard?
     var localProject: Project?
     var localFolder: ProjectFolder?
+    var localContext: WorkContext?
+    var localContact: Contact?
+    var localContextLinks: ContextLinks?
     var key: String { "\(entityKind ?? "tasks")/\(taskId)" }
 }
 
@@ -171,7 +186,7 @@ public struct SyncIssue: Codable, Sendable {
 }
 
 struct SavedState: Codable, Sendable {
-    var formatVersion = 7
+    var formatVersion = 8
     var serverURL = ""
     var snapshot = Snapshot()
     var pending: [PendingMutation] = []

@@ -147,6 +147,168 @@
         }
       }
     },
+    "/api/contacts/{id}": {
+      "put": {
+        "tags": [
+          "contexts"
+        ],
+        "operationId": "save_contact",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Contact"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contact"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "contexts"
+        ],
+        "operationId": "delete_contact",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/context-links/{id}": {
+      "put": {
+        "tags": [
+          "contexts"
+        ],
+        "operationId": "save_links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextLinks"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextLinks"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contexts/{id}": {
+      "put": {
+        "tags": [
+          "contexts"
+        ],
+        "operationId": "save_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkContext"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkContext"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "contexts"
+        ],
+        "operationId": "delete_context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/api/folders": {
       "get": {
         "tags": [
@@ -1388,6 +1550,108 @@
         },
         "additionalProperties": false
       },
+      "Contact": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContextField": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ContextFieldKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContextFieldKind": {
+        "type": "string",
+        "enum": [
+          "identifier",
+          "contact",
+          "choice",
+          "text",
+          "date",
+          "link",
+          "note"
+        ]
+      },
+      "ContextLinks": {
+        "type": "object",
+        "description": "Each owner has one independently revised attachment record. Empty values mask inheritance;\nabsent keys inherit. Field ids are scoped to a context, so unrelated schemas never collide.",
+        "required": [
+          "id",
+          "contextIds",
+          "overrides"
+        ],
+        "properties": {
+          "contextIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "propertyNames": {
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "CustomReminder": {
         "type": "object",
         "required": [
@@ -1776,6 +2040,9 @@
         "type": "object",
         "required": [
           "protocolVersion",
+          "contexts",
+          "contacts",
+          "contextLinks",
           "tasks",
           "projects",
           "folders",
@@ -1789,6 +2056,24 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Board"
+            }
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Contact"
+            }
+          },
+          "contextLinks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextLinks"
+            }
+          },
+          "contexts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkContext"
             }
           },
           "fields": {
@@ -2054,6 +2339,29 @@
             "$ref": "#/components/schemas/Task"
           }
         }
+      },
+      "WorkContext": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "fields"
+        ],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextField"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       }
     }
   },

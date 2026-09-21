@@ -648,7 +648,7 @@ async fn kanban_migration_preserves_old_completed_tasks_and_reminders() {
 async fn board_sorting_round_trips_replays_and_preserves_legacy_edits() {
     let state = state().await;
     let initial = snapshot(state.pool()).await.unwrap();
-    assert_eq!(initial.protocol_version, 5);
+    assert_eq!(initial.protocol_version, 6);
     assert_eq!(initial.boards[0].sort_mode, "created");
     assert!(initial.boards[0].manual_order.is_empty());
     let mut version = 1;
@@ -683,4 +683,226 @@ async fn board_sorting_round_trips_replays_and_preserves_legacy_edits() {
         json!({"id":"status", "name":"Stale", "fieldId":"status", "sortMode":"due"}), version - 1);
     assert!(matches!(send(&state, stale).await, Err(AppError::Conflict(_))));
     assert_eq!(snapshot(state.pool()).await.unwrap().versions["boards/status"], version);
+}
+
+#[tokio::test]
+async fn contexts_validate_replay_preserve_overrides_and_cascade_atomically() {
+    let state = state().await;
+    let contact = json!({"id":"client", "name":"Client", "email":"client@example.com", "phone":"", "notes":""});
+    send(
+        &state,
+        operation("contact", "/api/contacts/client", "PUT", contact, 0),
+    )
+    .await
+    .unwrap();
+    let context = json!({"id":"matter", "name":"Matter", "fields":[
+        {"id":"number", "name":"Matter number", "kind":"identifier", "value":"M-123"},
+        {"id":"client", "name":"Client", "kind":"contact", "value":"client"},
+        {"id":"platform", "name":"Platform", "kind":"choice", "options":["Cloudflare", "Local"], "value":"Local"},
+        {"id":"date", "name":"Opened", "kind":"date", "value":"2028-02-29"},
+        {"id":"repo", "name":"Repository", "kind":"link", "value":"https://example.com/repo"}
+    ]});
+    let create = operation("context", "/api/contexts/matter", "PUT", context.clone(), 0);
+    send(&state, create.clone()).await.unwrap();
+    let replay = send(&state, create).await.unwrap();
+    assert_eq!(replay.changes["contexts/matter"], 1);
+    send(
+        &state,
+        operation("task", "/api/tasks", "POST", task("context-task"), 0),
+    )
+    .await
+    .unwrap();
+    let links = json!({"id":"tasks:context-task", "contextIds":["matter"], "overrides":{"matter":{"number":"LOCAL", "platform":"Cloudflare"}}});
+    let attach = operation(
+        "attach",
+        "/api/context-links/tasks%3Acontext-task",
+        "PUT",
+        links.clone(),
+        0,
+    );
+    let reply = send(&state, attach.clone()).await.unwrap();
+    assert_eq!(reply.changes["context-links/tasks:context-task"], 1);
+    assert!(!reply.changes.contains_key("tasks/context-task"));
+    send(&state, attach).await.unwrap();
+    assert!(matches!(
+        send(
+            &state,
+            operation(
+                "stale",
+                "/api/context-links/tasks%3Acontext-task",
+                "PUT",
+                links.clone(),
+                0
+            )
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    assert!(matches!(
+        send(
+            &state,
+            operation(
+                "delete-used-contact",
+                "/api/contacts/client",
+                "DELETE",
+                json!({}),
+                1
+            )
+        )
+        .await,
+        Err(AppError::Invalid(_))
+    ));
+    assert!(matches!(
+        send(
+            &state,
+            operation(
+                "delete-used-context",
+                "/api/contexts/matter",
+                "DELETE",
+                json!({}),
+                1
+            )
+        )
+        .await,
+        Err(AppError::Invalid(_))
+    ));
+    // Defaults can change without bumping task/link versions; local overrides remain intact.
+    let mut edited = context.clone();
+    edited["fields"][0]["value"] = json!("NEW-SHARED");
+    send(
+        &state,
+        operation("default", "/api/contexts/matter", "PUT", edited.clone(), 1),
+    )
+    .await
+    .unwrap();
+    let mut removing = edited.clone();
+    removing["fields"].as_array_mut().unwrap().remove(0);
+    assert!(matches!(
+        send(
+            &state,
+            operation("remove-field", "/api/contexts/matter", "PUT", removing, 2)
+        )
+        .await,
+        Err(AppError::Invalid(_))
+    ));
+    let mut options = edited.clone();
+    options["fields"][2]["options"] = json!(["Local"]);
+    assert!(matches!(
+        send(
+            &state,
+            operation("remove-option", "/api/contexts/matter", "PUT", options, 2)
+        )
+        .await,
+        Err(AppError::Invalid(_))
+    ));
+    for (field, value) in [
+        ("client", "missing"),
+        ("date", "2026-02-29"),
+        ("repo", "javascript:alert(1)"),
+        ("platform", "missing"),
+        ("unknown", "text"),
+    ] {
+        let mut invalid = links.clone();
+        invalid["overrides"]["matter"][field] = json!(value);
+        assert!(matches!(
+            send(
+                &state,
+                operation(
+                    "invalid",
+                    "/api/context-links/tasks%3Acontext-task",
+                    "PUT",
+                    invalid,
+                    1
+                )
+            )
+            .await,
+            Err(AppError::Invalid(_))
+        ));
+    }
+    let missing = json!({"id":"tasks:missing", "contextIds":["matter"], "overrides":{}});
+    assert!(matches!(
+        send(
+            &state,
+            operation(
+                "missing",
+                "/api/context-links/tasks%3Amissing",
+                "PUT",
+                missing,
+                0
+            )
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    // A failed receipt rolls back the attachment and its revision together.
+    sqlx::query("CREATE TRIGGER fail_context_receipt BEFORE INSERT ON sync_receipts BEGIN SELECT RAISE(ABORT, 'test'); END").execute(state.pool()).await.unwrap();
+    let mut cleared = links.clone();
+    cleared["overrides"]["matter"]["number"] = json!("");
+    let clear = operation(
+        "clear",
+        "/api/context-links/tasks%3Acontext-task",
+        "PUT",
+        cleared,
+        1,
+    );
+    assert!(send(&state, clear.clone()).await.is_err());
+    assert_eq!(
+        snapshot(state.pool()).await.unwrap().versions["context-links/tasks:context-task"],
+        1
+    );
+    sqlx::query("DROP TRIGGER fail_context_receipt")
+        .execute(state.pool())
+        .await
+        .unwrap();
+    send(&state, clear).await.unwrap();
+    state
+        .tasks
+        .toggle("context-task", true, None)
+        .await
+        .unwrap();
+    let snap = snapshot(state.pool()).await.unwrap();
+    let successor = snap
+        .context_links
+        .iter()
+        .find(|l| l.id == "tasks:next:context-task")
+        .unwrap();
+    assert_eq!(successor.overrides["matter"]["number"], "");
+    assert_eq!(successor.context_ids, ["matter"]);
+    let delete = operation(
+        "delete-task",
+        "/api/tasks/context-task",
+        "DELETE",
+        json!({}),
+        snap.versions["tasks/context-task"],
+    );
+    let reply = send(&state, delete.clone()).await.unwrap();
+    assert_eq!(reply.changes["context-links/tasks:context-task"], 3);
+    send(&state, delete).await.unwrap();
+    state.tasks.delete("next:context-task").await.unwrap();
+    assert!(snapshot(state.pool())
+        .await
+        .unwrap()
+        .context_links
+        .is_empty());
+    let delete_context = operation(
+        "delete-context",
+        "/api/contexts/matter",
+        "DELETE",
+        json!({}),
+        2,
+    );
+    send(&state, delete_context.clone()).await.unwrap();
+    send(&state, delete_context).await.unwrap();
+    send(
+        &state,
+        operation(
+            "delete-contact",
+            "/api/contacts/client",
+            "DELETE",
+            json!({}),
+            1,
+        ),
+    )
+    .await
+    .unwrap();
 }

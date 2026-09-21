@@ -16,7 +16,7 @@ A shared SwiftUI app for macOS 14+ and iOS 17+. Requires Xcode 16 or newer. No t
 
 3. Run the app. In **Settings**, enter `http://localhost:3000` and the matching API token, if configured. You can create tasks before connecting.
 
-Restart the updated Rust server before syncing. Migration `0011_task_details.sql` adds task descriptions. The client requires sync protocol version 5 so an older server cannot silently discard descriptions or unit-based reminders. Existing local files migrate to local format 6 without changing queued request IDs or bodies. Older app versions cannot open format 6, which adds pending project creation.
+Restart the updated Rust server before syncing. Migration `0012_contexts.sql` adds reusable contexts, shared contacts, and attachments. The client requires sync protocol version 6 and writes local format 8. Existing local files migrate without changing queued request IDs or bodies. Older app versions cannot open format 8.
 
 On a physical phone, localhost means the phone itself. For trusted local development, run the API with `API_BIND=0.0.0.0:3000`, use `http://your-mac.local:3000`, and allow the local-network prompt. Find the Mac hostname with `scutil --get LocalHostName`. Use an HTTPS URL for a deployed server. The app permits plaintext HTTP only for loopback and `.local` hosts.
 
@@ -35,7 +35,19 @@ The Xcode project is checked in. If you change `project.yml`, regenerate it with
 
 Tokens live in a device-only Keychain entry scoped to the server URL. Switching servers requires an empty pending queue and replaces the downloaded cache. Local data lives at `Adhocly/state.json` in the app’s Application Support directory, inside the sandbox on installed builds. Uninstalling the app can remove unsynced data.
 
-The client creates projects but does not yet rename or delete them, or manage folders, project-level metadata, or user accounts. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
+The client supports project creation, deletion, and folder organization, but not project renaming or user accounts. Legacy project metadata remains in the API; contexts are a separate feature. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
+
+## Contexts
+
+Open the **Contexts & contacts** workspace from the sidebar, or the **Contexts** tab on iPhone. The Projects directory and **More actions** also link to it. Contexts and contacts have dedicated detail, creation, and editing pages. Start with a blank context, Legal matter, or Software project, then add identifier, contact, choice, text, date, link, and long-note fields. Contacts have a name, email, phone, and notes; editing a shared contact updates every reference.
+
+Open a context to see its shared fields, projects, folder attachments, and related tasks. Filter tasks by inherited context, direct attachments, or task-level overrides, then narrow by completion status or task text. Expand a task's effective values to see where each value came from. Explicit clears count as overrides, even when the resulting value matches the shared value. Inactive overrides have a separate list and do not count as tasks currently using the context. You can edit or complete tasks here, manage overrides, or open a linked project. These filters are temporary; persistent custom views are not implemented.
+
+Right-click a task or project (long-press on iPhone/iPad), then choose **Attach context → context name** to attach it immediately. Direct attachments are checked and cannot be added twice; existing overrides are kept. Task menus work in lists, boards, the schedule, and context pages. Use a folder or project's **Contexts…** action to manage attachments and overrides. Tasks inherit attachments and field overrides through their folder ancestry and project. Open a saved task's editor to attach contexts or override individual fields. Turn off **Override** to inherit again; an explicitly empty value hides the inherited value. Attachment edits save separately from the task editor. Save a new task or project change before editing its attachments.
+
+Task rows and cards show context names, identifiers, and client names. The task editor shows where each value came from, with expandable notes, contact details, and clickable HTTP/HTTPS links. Search also matches context names, identifiers, and contact names.
+
+Moving work recalculates inheritance. Overrides for contexts no longer inherited stay inactive until reattached, or you remove them. Detaching locally does not suppress an ancestor's attachment. Recurring tasks copy their direct attachments and overrides. Contexts and contacts cannot be deleted while referenced; fields and choice options cannot be removed while overrides use them. Everything uses the same offline queue and conflict review as tasks.
 
 ## Search
 

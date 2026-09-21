@@ -21,6 +21,7 @@
 		AB644D60F32DD138D891EE11 /* TaskQuickEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A6392F493E2C72EA99B16E /* TaskQuickEdit.swift */; };
 		ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */; };
 		C48BEBF4C3568FE91602FB8F /* ProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9198A3830090CE7C9B8EE5F /* ProjectEditorView.swift */; };
+		CB86D966C3C1CFB3D8D5F90D /* ContextsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79C31671EB438432B8FB18B3 /* ContextsView.swift */; };
 		CC67898B65155639D554C4BF /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */; };
 /* End PBXBuildFile section */
 
@@ -32,6 +33,7 @@
 		448B965FE0EF5AFD18A53A15 /* Adhocly-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-iOS.entitlements"; sourceTree = "<group>"; };
 		57A6392F493E2C72EA99B16E /* TaskQuickEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskQuickEdit.swift; sourceTree = "<group>"; };
 		63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
+		79C31671EB438432B8FB18B3 /* ContextsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextsView.swift; sourceTree = "<group>"; };
 		7D30FF224100AB7BE66F3C51 /* Adhocly-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-macOS.entitlements"; sourceTree = "<group>"; };
 		7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		82B04EB378CEDBDB105C7C36 /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleView.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 				CE15E50FF76E2DB3B027E337 /* BoardSettingsView.swift */,
 				A485208530742026EBDB35D0 /* CaptureBar.swift */,
 				BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */,
+				79C31671EB438432B8FB18B3 /* ContextsView.swift */,
 				30C50F6A897117BEC2260E3A /* Credentials.swift */,
 				429359F26B5CD814761E1B46 /* Info.plist */,
 				00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */,
@@ -187,6 +190,7 @@
 				2B83F7C1654CF5D0FC030ED7 /* BoardSettingsView.swift in Sources */,
 				7F5EC46AA09E938E66EBC2E8 /* CaptureBar.swift in Sources */,
 				ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */,
+				CB86D966C3C1CFB3D8D5F90D /* ContextsView.swift in Sources */,
 				56C743B81AE3DDED76A81190 /* Credentials.swift in Sources */,
 				CC67898B65155639D554C4BF /* KanbanView.swift in Sources */,
 				C48BEBF4C3568FE91602FB8F /* ProjectEditorView.swift in Sources */,

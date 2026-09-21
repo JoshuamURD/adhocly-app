@@ -9,7 +9,7 @@ use serde_json::Value;
 use sqlx::{Sqlite, SqliteConnection, SqlitePool, Transaction};
 use utoipa::ToSchema;
 
-use crate::{error::AppError, folders, kanban, projects, state::AppState, tasks};
+use crate::{contexts, error::AppError, folders, kanban, projects, state::AppState, tasks};
 
 type Versions = BTreeMap<String, i64>;
 
@@ -64,6 +64,9 @@ impl SyncOperation {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SyncSnapshot {
     protocol_version: u32,
+    contexts: Vec<contexts::WorkContext>,
+    contacts: Vec<contexts::Contact>,
+    context_links: Vec<contexts::ContextLinks>,
     tasks: Vec<tasks::Task>,
     projects: Vec<projects::Project>,
     folders: Vec<folders::Folder>,
@@ -182,7 +185,10 @@ impl Write {
 async fn snapshot(pool: &SqlitePool) -> Result<SyncSnapshot, AppError> {
     let mut tx = pool.begin().await?;
     let snapshot = SyncSnapshot {
-        protocol_version: 5,
+        protocol_version: 6,
+        contexts: contexts::contexts_in(&mut tx).await?,
+        contacts: contexts::contacts_in(&mut tx).await?,
+        context_links: contexts::links_in(&mut tx).await?,
         tasks: tasks::SqliteTaskRepository::list_in(&mut tx).await?,
         projects: projects::SqliteProjectRepository::list_in(&mut tx).await?,
         folders: folders::SqliteFolderRepository::list_in(&mut tx).await?,
@@ -233,8 +239,23 @@ pub(crate) async fn apply(
             )
         };
     }
-    // Reuse the same handlers and validation as online clients; repositories own the transaction.
+    // Reuse the same handlers and validation as online clients; each write owns its transaction.
     match (operation.method.as_str(), parts.as_slice()) {
+        ("PUT", ["contexts", id]) => {
+            let _ = contexts::save_context(Path(id.to_string()), scoped, body!()).await?;
+        }
+        ("DELETE", ["contexts", id]) => {
+            let _ = contexts::delete_context(Path(id.to_string()), scoped).await?;
+        }
+        ("PUT", ["contacts", id]) => {
+            let _ = contexts::save_contact(Path(id.to_string()), scoped, body!()).await?;
+        }
+        ("DELETE", ["contacts", id]) => {
+            let _ = contexts::delete_contact(Path(id.to_string()), scoped).await?;
+        }
+        ("PUT", ["context-links", id]) => {
+            let _ = contexts::save_links(Path(id.to_string()), scoped, body!()).await?;
+        }
         ("POST", ["task-fields"]) => {
             let _ = kanban::create_field(scoped, body!()).await?;
         }

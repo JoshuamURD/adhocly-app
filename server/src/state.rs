@@ -10,10 +10,11 @@ use crate::{
     tasks::{SqliteTaskRepository, TaskRepository},
 };
 
-/// Shared handler state. Handlers only ever see the repository traits, never SQL.
+/// Shared handler state, including the current sync operation for transactional writes.
 #[derive(Clone)]
 pub(crate) struct AppState {
     pool: SqlitePool,
+    pub(crate) sync: Option<crate::sync::SyncOperation>,
     pub(crate) tasks: Arc<dyn TaskRepository>,
     pub(crate) projects: Arc<dyn ProjectRepository>,
     pub(crate) folders: Arc<dyn FolderRepository>,
@@ -31,9 +32,10 @@ impl AppState {
             tasks: Arc::new(SqliteTaskRepository::new(pool.clone(), sync.clone())),
             projects: Arc::new(SqliteProjectRepository::new(pool.clone(), sync.clone())),
             folders: Arc::new(SqliteFolderRepository::new(pool.clone(), sync.clone())),
-            kanban: KanbanRepository::new(pool.clone(), sync),
+            kanban: KanbanRepository::new(pool.clone(), sync.clone()),
             reminders: Arc::new(SqliteReminderRepository::new(pool.clone())),
             pool,
+            sync,
         }
     }
 

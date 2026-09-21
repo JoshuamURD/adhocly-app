@@ -236,6 +236,7 @@ struct ScheduleView: View {
                     .strikethrough(entry.task.completed)
                     .foregroundStyle(entry.task.completed ? .secondary : .primary)
                     .lineLimit(compact ? 1 : 2)
+                if !compact { TaskContextLabel(store: store, task: entry.task) }
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }

@@ -266,6 +266,9 @@ impl SqliteTaskRepository {
             sqlx::query_file!("sql/tasks/insert_next_occurrence.sql", &canonical, &task.id)
                 .execute(&mut *conn)
                 .await?;
+            sqlx::query("INSERT INTO context_links (id, data, task_id) SELECT 'tasks:' || ?, json_set(data, '$.id', 'tasks:' || ?), ? FROM context_links WHERE task_id = ?")
+                .bind(&canonical).bind(&canonical).bind(&canonical).bind(&task.id)
+                .execute(&mut *conn).await?;
         }
         Ok(
             sqlx::query_file_as!(Task, "sql/tasks/select_one.sql", &canonical)

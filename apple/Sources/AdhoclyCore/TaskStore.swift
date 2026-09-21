@@ -14,7 +14,7 @@ public final class TaskStore {
         self.session = session
         if FileManager.default.fileExists(atPath: fileURL.path) {
             state = try JSONDecoder().decode(SavedState.self, from: Data(contentsOf: fileURL))
-            guard [1, 2, 3, 4, 5, 6, 7].contains(state.formatVersion) else { throw AppFailure("Unsupported local data version. Update the app before opening this data.") }
+            guard [1, 2, 3, 4, 5, 6, 7, 8].contains(state.formatVersion) else { throw AppFailure("Unsupported local data version. Update the app before opening this data.") }
         } else {
             state = SavedState()
         }
@@ -64,6 +64,151 @@ public final class TaskStore {
         return true
     }
 
+    public var contexts: [WorkContext] {
+        var values = state.snapshot.contexts
+        for pending in state.pending where pending.entityKind == "contexts" {
+            values.removeAll { $0.id == pending.taskId }
+            if let value = pending.localContext { values.append(value) }
+        }
+        return values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    public var contacts: [Contact] {
+        var values = state.snapshot.contacts
+        for pending in state.pending where pending.entityKind == "contacts" {
+            values.removeAll { $0.id == pending.taskId }
+            if let value = pending.localContact { values.append(value) }
+        }
+        return values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    public var contextLinks: [ContextLinks] {
+        var values = state.snapshot.contextLinks
+        for pending in state.pending {
+            if pending.entityKind == "context-links" {
+                values.removeAll { $0.id == pending.taskId }
+                if let value = pending.localContextLinks { values.append(value) }
+            } else if pending.operation.method == "DELETE" {
+                values.removeAll { $0.id == "\(pending.entityKind ?? "tasks"):\(pending.taskId)" }
+            }
+        }
+        return values
+    }
+
+    private func validateContextID(_ id: String) throws {
+        guard !id.isEmpty, id.utf8.count <= 128,
+              id.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }) else {
+            throw AppFailure("Context, field and contact IDs must use letters, numbers, hyphens or underscores.")
+        }
+    }
+
+    private func validateContextName(_ name: String) throws {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.utf8.count <= 256 else {
+            throw AppFailure("Use a nonempty name of at most 256 bytes.")
+        }
+    }
+
+    public func saveContext(_ draft: WorkContext, replacing original: WorkContext? = nil) throws {
+        var value = draft
+        value.name = value.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try validateContextID(value.id)
+        try validateContextName(value.name)
+        guard contexts.first(where: { $0.id == value.id }) == original,
+              original == nil || original?.id == value.id else { throw AppFailure("This context changed. Reopen it before editing.") }
+        guard value.fields.count <= 64 else { throw AppFailure("At most 64 fields per context.") }
+        for index in value.fields.indices { value.fields[index].name = value.fields[index].name.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard Set(value.fields.map(\.id)).count == value.fields.count,
+              Set(value.fields.map { $0.name.lowercased() }).count == value.fields.count else { throw AppFailure("Fields need unique IDs and names.") }
+        for field in value.fields {
+            try validateContextID(field.id)
+            try validateContextName(field.name)
+            if let old = original?.fields.first(where: { $0.id == field.id }), old.kind != field.kind {
+                throw AppFailure("A field's type cannot change. Add a new field instead.")
+            }
+            if field.kind == .choice {
+                guard !field.options.isEmpty, field.options.count <= 128,
+                      field.options.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 256 }),
+                      Set(field.options.map { $0.lowercased() }).count == field.options.count else { throw AppFailure("Choice fields need 1–128 nonempty, unique options.") }
+            } else if !field.options.isEmpty { throw AppFailure("Only choice fields can have options.") }
+            try field.validate(field.value, contacts: contacts)
+        }
+        for link in contextLinks {
+            for (id, override) in link.overrides[value.id] ?? [:] {
+                guard let field = value.fields.first(where: { $0.id == id }) else { throw AppFailure("Remove local overrides before deleting their field.") }
+                try field.validate(override, contacts: contacts)
+            }
+        }
+        var body = MutationBody()
+        body.id = value.id; body.name = value.name; body.fields = value.fields
+        try enqueueContextEntity(kind: "contexts", id: value.id, body: body, context: value)
+    }
+
+    public func saveContact(_ draft: Contact, replacing original: Contact? = nil) throws {
+        var value = draft
+        value.name = value.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try validateContextID(value.id)
+        try validateContextName(value.name)
+        guard contacts.first(where: { $0.id == value.id }) == original,
+              original == nil || original?.id == value.id else { throw AppFailure("This contact changed. Reopen it before editing.") }
+        guard value.email.utf8.count <= 320, value.phone.utf8.count <= 128, value.notes.utf8.count <= 65_536 else { throw AppFailure("Contact details are too long.") }
+        var body = MutationBody()
+        body.id = value.id; body.name = value.name; body.email = value.email; body.phone = value.phone; body.notes = value.notes
+        try enqueueContextEntity(kind: "contacts", id: value.id, body: body, contact: value)
+    }
+
+    public func saveContextLinks(_ draft: ContextLinks, replacing original: ContextLinks) throws {
+        guard draft.id == original.id, contextLinks(for: draft.id) == original else { throw AppFailure("These attachments changed. Reopen them before editing.") }
+        let exists: Bool
+        if draft.id.hasPrefix("tasks:") { exists = tasks.contains { "tasks:\($0.id)" == draft.id } }
+        else if draft.id.hasPrefix("projects:") { exists = projects.contains { "projects:\($0.id)" == draft.id } }
+        else { exists = folders.contains { "folders:\($0.id)" == draft.id } }
+        guard exists else { throw AppFailure("Save this task, project or folder before attaching contexts.") }
+        guard draft.contextIds.count <= 64, draft.overrides.count <= 64,
+              Set(draft.contextIds).count == draft.contextIds.count,
+              draft.contextIds.allSatisfy({ id in contexts.contains { $0.id == id } }) else { throw AppFailure("Choose up to 64 unique, existing contexts.") }
+        for (id, values) in draft.overrides {
+            guard let context = contexts.first(where: { $0.id == id }) else { throw AppFailure("An override references an unavailable context.") }
+            for (fieldId, value) in values {
+                guard let field = context.fields.first(where: { $0.id == fieldId }) else { throw AppFailure("An override references an unavailable field.") }
+                try field.validate(value, contacts: contacts)
+            }
+        }
+        if draft == original { return }
+        var body = MutationBody()
+        body.id = draft.id; body.contextIds = draft.contextIds; body.overrides = draft.overrides
+        try enqueueContextEntity(kind: "context-links", id: draft.id, body: body, links: draft)
+    }
+
+    public func deleteContext(_ id: String) throws {
+        guard contexts.contains(where: { $0.id == id }) else { throw AppFailure("Context no longer exists.") }
+        guard !contextLinks.contains(where: { $0.contextIds.contains(id) || $0.overrides[id] != nil }) else {
+            throw AppFailure("Detach this context and remove its overrides before deleting it.")
+        }
+        try enqueueContextEntity(kind: "contexts", id: id, body: MutationBody(), delete: true)
+    }
+
+    public func deleteContact(_ id: String) throws {
+        guard contacts.contains(where: { $0.id == id }) else { throw AppFailure("Contact no longer exists.") }
+        for context in contexts {
+            for field in context.fields where field.kind == .contact {
+                guard field.value != id, !contextLinks.contains(where: { $0.overrides[context.id]?[field.id] == id }) else {
+                    throw AppFailure("Remove this contact from contexts and overrides before deleting it.")
+                }
+            }
+        }
+        try enqueueContextEntity(kind: "contacts", id: id, body: MutationBody(), delete: true)
+    }
+
+    private func enqueueContextEntity(kind: String, id: String, body: MutationBody, context: WorkContext? = nil,
+                                      contact: Contact? = nil, links: ContextLinks? = nil, delete: Bool = false) throws {
+        var next = state
+        next.pending.append(PendingMutation(taskId: id,
+            operation: SyncOperation(url: Self.entityPath(kind, id), method: delete ? "DELETE" : "PUT", body: body,
+                                     expectedVersion: version(for: "\(kind)/\(id)")),
+            entityKind: kind, localContext: context, localContact: contact, localContextLinks: links))
+        try commit(next)
+    }
+
     public var pendingCount: Int { state.pending.count }
     public var issue: SyncIssue? { state.issue }
     public var lastSyncedAt: Date? { state.lastSyncedAt }
@@ -98,6 +243,7 @@ public final class TaskStore {
             tasks.filter {
                 $0.title.localizedStandardContains(query)
                     || $0.details.localizedStandardContains(query)
+                    || contextSummary(for: $0).localizedStandardContains(query)
                     || (names[$0.projectId] ?? $0.project).localizedStandardContains(query)
             }
         )
@@ -341,7 +487,13 @@ public final class TaskStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data: Data?
-        if issue.entityKind == "projects" {
+        if issue.entityKind == "contexts" {
+            data = try? encoder.encode((local ? contexts : state.snapshot.contexts).first { $0.id == issue.taskId })
+        } else if issue.entityKind == "contacts" {
+            data = try? encoder.encode((local ? contacts : state.snapshot.contacts).first { $0.id == issue.taskId })
+        } else if issue.entityKind == "context-links" {
+            data = try? encoder.encode((local ? contextLinks : state.snapshot.contextLinks).first { $0.id == issue.taskId })
+        } else if issue.entityKind == "projects" {
             let value = (local ? projects : state.snapshot.projects).first { $0.id == issue.taskId }
             data = try? encoder.encode(value)
         } else if issue.entityKind == "folders" {
@@ -368,6 +520,9 @@ public final class TaskStore {
             replacement.operation.expectedVersion = version(for: issue.key)
             let exists: Bool
             switch issue.entityKind {
+            case "contexts": exists = state.snapshot.contexts.contains { $0.id == issue.taskId }
+            case "contacts": exists = state.snapshot.contacts.contains { $0.id == issue.taskId }
+            case "context-links": exists = state.snapshot.contextLinks.contains { $0.id == issue.taskId }
             case "projects": exists = state.snapshot.projects.contains { $0.id == issue.taskId }
             case "folders": exists = state.snapshot.folders.contains { $0.id == issue.taskId }
             case "task-fields": exists = state.snapshot.taskFields.contains { $0.id == issue.taskId }
@@ -376,6 +531,8 @@ public final class TaskStore {
             if issue.entityKind == "projects", replacement.operation.url.hasSuffix("/folder") {
                 guard exists else { throw AppFailure("This project was deleted on the server. Discard its local move before continuing.") }
                 // A move updates only folderId, not the project's name or metadata.
+            } else if ["contexts", "contacts", "context-links"].contains(issue.entityKind ?? "") {
+                // These use PUT upserts on a stable, independently revisioned URL.
             } else if replacement.operation.method != "DELETE" {
                 replacement.operation.method = exists ? "PUT" : "POST"
                 replacement.operation.url = exists ? Self.entityPath(issue.entityKind!, issue.taskId) : "/api/\(issue.entityKind!)"
@@ -490,7 +647,7 @@ public final class TaskStore {
     // leaves the old queue intact; a committed server mutation can safely replay after a crash.
     private func commit(_ newState: SavedState) throws {
         var next = newState
-        next.formatVersion = 7
+        next.formatVersion = 8
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(next)
@@ -510,8 +667,8 @@ public final class TaskStore {
         do {
             let api = SyncAPI(baseURL: try SyncAPI.validatedURL(state.serverURL), token: token, session: session)
             let initialSnapshot = try await api.snapshot()
-            guard initialSnapshot.protocolVersion >= 5 else {
-                throw AppFailure("Update the Rust server to the task details and reminder units version before syncing. Your local changes are safe; older servers cannot save these fields.")
+            guard initialSnapshot.protocolVersion >= 6 else {
+                throw AppFailure("Update the Rust server to the contexts version before syncing. Your local changes are safe; older servers cannot save contexts.")
             }
             var refreshed = state
             refreshed.snapshot = initialSnapshot
@@ -584,6 +741,15 @@ public final class TaskStore {
             next.pending.append(PendingMutation(taskId: copy.id,
                 operation: SyncOperation(url: "/api/tasks", method: "POST", body: MutationBody(task: copy), expectedVersion: 0),
                 localTask: copy))
+            var links = contextLinks(for: "tasks:\(issue.taskId)")
+            if !links.contextIds.isEmpty || !links.overrides.isEmpty {
+                links.id = "tasks:\(copy.id)"
+                var body = MutationBody()
+                body.id = links.id; body.contextIds = links.contextIds; body.overrides = links.overrides
+                next.pending.append(PendingMutation(taskId: links.id,
+                    operation: SyncOperation(url: Self.entityPath("context-links", links.id), method: "PUT", body: body, expectedVersion: 0),
+                    entityKind: "context-links", localContextLinks: links))
+            }
         }
         try commit(next)
         syncError = nil

@@ -1,3 +1,4 @@
+mod contexts;
 mod db;
 mod error;
 mod folders;

@@ -37,6 +37,12 @@ Tokens live in a device-only Keychain entry scoped to the server URL. Switching 
 
 The client creates projects but does not yet rename or delete them, or manage folders, project-level metadata, or user accounts. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
 
+## Search
+
+Use **Search projects and tasks** from any workspace or the Projects/Boards directory. Search matches project names, task titles, and task descriptions across the whole workspace, including completed tasks and empty projects. It works offline and includes changes waiting to sync.
+
+Click a project result to open it. Edit task titles inline with the same date and project shortcuts used elsewhere, or open the full editor with the sliders button. The arrow beside a task opens its project, scrolls to the task, and highlights it. Clear search to return to the current view.
+
 ## Quick task editing
 
 Click a task in a list, board, or schedule to edit its title inline. Append `@tomorrow`, `!Monday 9am`, or `/Project name` to change its planned date, due date, or existing project; project suggestions and resolved dates appear before saving. Only explicitly supplied fields change—notes, reminders, status, and other dates stay intact. Press Return or **Save title** to save; **Cancel** or Escape discards the draft. Invalid shortcuts keep the draft open. Use the sliders button beside the title for the full details editor.
@@ -45,7 +51,7 @@ Right-click a task (long-press on iPhone/iPad) for **Planned date**, **Due date*
 
 ## Kanban
 
-Open **By status** in the sidebar, or use **+ → New Kanban**. A board groups all tasks by Status or by a task property. Search filters the cards. Drag a card between columns, or use its menu’s **Move to** action with a keyboard, VoiceOver, or touch.
+Open **By status** in the sidebar, or use **+ → New Kanban**. A board groups all tasks by Status or by a task property. Search opens workspace-wide project and task results. Drag a card between columns, or use its menu’s **Move to** action with a keyboard, VoiceOver, or touch.
 
 Use **+ → Task properties** to add choice, text, or number properties. Edit statuses there or from a status board’s **Edit statuses** action. Custom status columns are shared across boards: moving a card changes the task’s status everywhere. Choice properties use their configured options as columns; text and number properties use the distinct values assigned to tasks, plus Unassigned.
 

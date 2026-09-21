@@ -26,6 +26,9 @@ struct TaskListView: View {
     @State private var projectPath: [String] = []
     @State private var taskFilter = "active"
     @State private var search = ""
+    @State private var searchPresented = false
+    @State private var selectedTab = "tasks"
+    @State private var revealedTask: TaskItem?
     @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("todaySort") private var todaySort = TodayTaskOrder.due
@@ -43,6 +46,8 @@ struct TaskListView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 
+    private var isSearching: Bool { !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     private func board(for scope: String) -> KanbanBoard? {
         guard scope.hasPrefix("board:") else { return nil }
         return store.boards.first { $0.id == String(scope.dropFirst(6)) }
@@ -59,9 +64,7 @@ struct TaskListView: View {
                 matches = task.projectId == String(value.dropFirst(8))
             default: matches = true
             }
-            return matches && (search.isEmpty || task.title.localizedCaseInsensitiveContains(search)
-                               || task.project.localizedCaseInsensitiveContains(search)
-                               || task.details.localizedCaseInsensitiveContains(search))
+            return matches
         }
     }
 
@@ -93,6 +96,9 @@ struct TaskListView: View {
         }
         .tint(.accentColor)
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in today = Date() }
+        .onChange(of: search) { _, _ in
+            if isSearching { revealedTask = nil }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { today = Date() }
         }
@@ -111,9 +117,10 @@ struct TaskListView: View {
         .sheet(item: $folderEditor) { request in
             FolderEditorView(model: model, store: store, draft: request.draft, original: request.original)
         }
-        .confirmationDialog("Delete project?", isPresented: Binding(
+        .alert("Delete project?", isPresented: Binding(
             get: { deletingProject != nil }, set: { if !$0 { deletingProject = nil } }
-        ), titleVisibility: .visible) {
+        )) {
+            Button("Cancel", role: .cancel) { deletingProject = nil }
             if let project = deletingProject {
                 Button("Delete “\(project.name)”", role: .destructive) {
                     model.perform { try store.deleteProject(project.id) }
@@ -183,25 +190,29 @@ struct TaskListView: View {
 
     #if os(iOS)
     private var phoneNavigation: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 workspace(taskFilter, showFilter: true)
             }
             .tabItem { Label("Tasks", systemImage: "checklist") }
+            .tag("tasks")
             NavigationStack {
                 workspace("schedule")
             }
             .tabItem { Label("Schedule", systemImage: "calendar") }
+            .tag("schedule")
             NavigationStack {
                 directory(isBoards: true)
                     .navigationDestination(for: String.self) { workspace($0) }
             }
             .tabItem { Label("Boards", systemImage: "rectangle.split.3x1") }
+            .tag("boards")
             NavigationStack(path: $projectPath) {
                 directory(isBoards: false)
                     .navigationDestination(for: String.self) { workspace($0) }
             }
             .tabItem { Label("Projects", systemImage: "folder") }
+            .tag("projects")
         }
     }
     #endif
@@ -242,6 +253,16 @@ struct TaskListView: View {
     }
 
     private func directory(isBoards: Bool) -> some View {
+        Group {
+            if isSearching { searchResults }
+            else { directoryContent(isBoards: isBoards) }
+        }
+        .background(AppStyle.canvas)
+        .navigationTitle(isBoards ? "Boards" : "Projects")
+        .searchable(text: $search, isPresented: $searchPresented, prompt: "Search projects and tasks")
+    }
+
+    private func directoryContent(isBoards: Bool) -> some View {
         VStack(spacing: 0) {
             WorkspaceHeading(title: isBoards ? "Your boards" : "Your projects",
                              subtitle: isBoards ? "See the work. Find the next step." : "Everything has a place.")
@@ -295,42 +316,46 @@ struct TaskListView: View {
         let visibleTasks = tasks(for: scope)
         let selectedBoard = board(for: scope)
         return VStack(spacing: 0) {
-            if scope != "schedule" {
-                WorkspaceHeading(title: title(for: scope), subtitle: subtitle(for: scope, count: visibleTasks.count))
-            }
-            if showFilter {
-                Picker("Show tasks", selection: $taskFilter) {
-                    Text("To do").tag("active")
-                    Text("Today").tag("today")
-                    Text("All").tag("all")
-                    Text("Completed").tag("completed")
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 12)
-            }
-            if scope == "today" { todayControls }
-            if scope == "schedule" {
-                ScheduleView(model: model, store: store, tasks: visibleTasks,
-                             editTask: { editor = EditorRequest(draft: $0, original: $0) })
-            } else if let selectedBoard, let field = store.taskFields.first(where: { $0.id == selectedBoard.fieldId }) {
-                KanbanView(model: model, store: store, board: selectedBoard, field: field, tasks: visibleTasks,
-                           editTask: { editor = EditorRequest(draft: $0, original: $0) },
-                           addTask: { editor = EditorRequest(draft: $0, original: nil) })
+            if isSearching {
+                searchResults
             } else {
-                taskList(visibleTasks, scope: scope)
+                if scope != "schedule" {
+                    WorkspaceHeading(title: title(for: scope), subtitle: subtitle(for: scope, count: visibleTasks.count))
+                }
+                if showFilter {
+                    Picker("Show tasks", selection: $taskFilter) {
+                        Text("To do").tag("active")
+                        Text("Today").tag("today")
+                        Text("All").tag("all")
+                        Text("Completed").tag("completed")
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+                }
+                if scope == "today" { todayControls }
+                if scope == "schedule" {
+                    ScheduleView(model: model, store: store, tasks: visibleTasks,
+                                 editTask: { editor = EditorRequest(draft: $0, original: $0) })
+                } else if let selectedBoard, let field = store.taskFields.first(where: { $0.id == selectedBoard.fieldId }) {
+                    KanbanView(model: model, store: store, board: selectedBoard, field: field, tasks: visibleTasks,
+                               editTask: { editor = EditorRequest(draft: $0, original: $0) },
+                               addTask: { editor = EditorRequest(draft: $0, original: nil) })
+                } else {
+                    taskList(visibleTasks, scope: scope)
+                }
             }
         }
         .background(AppStyle.canvas)
         .onPreferenceChange(TaskTitleEditingKey.self) { editingTitle = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editingTitle { captureBar(scope: scope) }
+            if !editingTitle && !isSearching { captureBar(scope: scope) }
         }
         .navigationTitle(title(for: scope))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .searchable(text: $search, prompt: "Search tasks")
+        .searchable(text: $search, isPresented: $searchPresented, prompt: "Search projects and tasks")
         .refreshable { await model.sync() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -362,8 +387,65 @@ struct TaskListView: View {
         }
     }
 
+    private var searchResults: some View {
+        let results = store.search(search)
+        return VStack(spacing: 0) {
+            WorkspaceHeading(title: "Search results", subtitle: "All projects · Including completed tasks")
+            List {
+                if !results.projects.isEmpty {
+                    Section("Projects (\(results.projects.count))") {
+                        ForEach(results.projects) { project in
+                            Button { openProject(project.id) } label: {
+                                HStack {
+                                    directoryRow(project.name,
+                                                 subtitle: project.folderId.map { store.folderPath($0) } ?? "Top level",
+                                                 symbol: project.id == "inbox" ? "tray" : "folder")
+                                    Spacer()
+                                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(editingTitle)
+                            .accessibilityLabel("Open project \(project.name)")
+                            .listRowBackground(AppStyle.surface)
+                        }
+                    }
+                }
+                if !results.tasks.isEmpty {
+                    Section("Tasks (\(results.tasks.count))") {
+                        taskRows(results.tasks, showLocation: true)
+                    }
+                }
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .overlay {
+                if results.projects.isEmpty && results.tasks.isEmpty {
+                    ContentUnavailableView {
+                        Label("No matching projects or tasks", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Try another title, detail, or project name.")
+                    } actions: {
+                        Button("Clear search") { search = "" }
+                    }
+                }
+            }
+        }
+        .onPreferenceChange(TaskTitleEditingKey.self) { editingTitle = $0 }
+    }
+
+    private func openProject(_ id: String, revealing task: TaskItem? = nil) {
+        search = ""
+        searchPresented = false
+        revealedTask = task
+        selection = "project:\(id)"
+        projectPath = ["project:\(id)"]
+        selectedTab = "projects"
+    }
+
     private func subtitle(for scope: String, count: Int) -> String {
-        if !search.isEmpty { return "\(count) matching \(count == 1 ? "task" : "tasks")" }
         if board(for: scope) != nil { return "Move work forward, one card at a time." }
         if scope == "completed" { return "A record of what you’ve taken care of." }
         if scope == "today" { return "\(count) \(count == 1 ? "task" : "tasks") planned or due today." }
@@ -418,10 +500,11 @@ struct TaskListView: View {
         .accessibilityIdentifier("today-group")
     }
 
-    private func taskRows(_ tasks: [TaskItem]) -> some View {
+    private func taskRows(_ tasks: [TaskItem], showLocation: Bool = false) -> some View {
         ForEach(tasks) { task in
-            taskRow(task)
-                .listRowBackground(AppStyle.surface)
+            taskRow(task, showLocation: showLocation)
+                .id(task.id)
+                .listRowBackground(revealedTask?.id == task.id ? Color.accentColor.opacity(0.12) : AppStyle.surface)
                 .listRowSeparatorTint(AppStyle.border)
                 .swipeActions {
                     Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
@@ -431,47 +514,53 @@ struct TaskListView: View {
     }
 
     private func taskList(_ tasks: [TaskItem], scope: String) -> some View {
-        List {
-            if scope == "today", let grouping = TodayTaskOrder(rawValue: todayGrouping) {
-                ForEach(TodayTasks.groups(tasks, by: grouping, sort: todaySort, statuses: store.statusField.options)) { group in
-                    Section {
-                        taskRows(group.tasks)
-                    } header: {
-                        HStack {
-                            Text(group.name)
-                            Spacer()
-                            Text("\(group.tasks.count)").monospacedDigit()
+        ScrollViewReader { proxy in
+            List {
+                if scope == "today", let grouping = TodayTaskOrder(rawValue: todayGrouping) {
+                    ForEach(TodayTasks.groups(tasks, by: grouping, sort: todaySort, statuses: store.statusField.options)) { group in
+                        Section {
+                            taskRows(group.tasks)
+                        } header: {
+                            HStack {
+                                Text(group.name)
+                                Spacer()
+                                Text("\(group.tasks.count)").monospacedDigit()
+                            }
                         }
                     }
+                } else {
+                    taskRows(scope == "today" ? TodayTasks.sorted(tasks, by: todaySort, statuses: store.statusField.options) : tasks)
                 }
-            } else {
-                taskRows(scope == "today" ? TodayTasks.sorted(tasks, by: todaySort, statuses: store.statusField.options) : tasks)
             }
-        }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.interactively)
-        .overlay {
-            if tasks.isEmpty {
-                ContentUnavailableView {
-                    Label(search.isEmpty ? (scope == "today" ? "Nothing planned or due today" : scope == "completed" ? "Good things take a first step" : "A little room to think") : "No matching tasks",
-                          systemImage: search.isEmpty ? "leaf" : "magnifyingglass")
-                        .foregroundStyle(Color.accentColor)
-                } description: {
-                    Text(search.isEmpty ? (scope == "today" ? "Tasks with a planned or due date today will appear here. Use @today or !today in quick capture." : scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail.") : "Try another title, detail, or project name.")
-                } actions: {
-                    if search.isEmpty && scope != "completed" {
-                        Button("Create a task") { editor = EditorRequest(draft: newTask(in: scope), original: nil) }
-                            .buttonStyle(.borderedProminent)
-                    } else if !search.isEmpty {
-                        Button("Clear search") { search = "" }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .task(id: revealedTask?.id) {
+                if let task = revealedTask, scope == "project:\(task.projectId)" {
+                    await Task.yield()
+                    proxy.scrollTo(task.id, anchor: .center)
+                }
+            }
+            .overlay {
+                if tasks.isEmpty {
+                    ContentUnavailableView {
+                        Label(scope == "today" ? "Nothing planned or due today" : scope == "completed" ? "Good things take a first step" : "A little room to think",
+                              systemImage: "leaf")
+                            .foregroundStyle(Color.accentColor)
+                    } description: {
+                        Text(scope == "today" ? "Tasks with a planned or due date today will appear here. Use @today or !today in quick capture." : scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail.")
+                    } actions: {
+                        if scope != "completed" {
+                            Button("Create a task") { editor = EditorRequest(draft: newTask(in: scope), original: nil) }
+                                .buttonStyle(.borderedProminent)
+                        }
                     }
                 }
             }
         }
     }
 
-    private func taskRow(_ task: TaskItem) -> some View {
+    private func taskRow(_ task: TaskItem, showLocation: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Button { model.perform { try store.toggle(task.id) } } label: {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
@@ -501,6 +590,18 @@ struct TaskListView: View {
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+            }
+            if showLocation {
+                Button { openProject(task.projectId, revealing: task) } label: {
+                    Image(systemName: "arrow.up.forward")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(editingTitle)
+                .accessibilityLabel("Show \(task.title) in \(task.project)")
+                .help("Show in \(task.project)")
             }
             if store.isPending(task.id) {
                 Image(systemName: "clock.arrow.circlepath")

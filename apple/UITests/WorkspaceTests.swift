@@ -325,6 +325,82 @@ final class WorkspaceTests: XCTestCase {
         screenshot("iPhone — Inline editing and task actions", app: app)
     }
 
+    @MainActor func testGlobalSearchInlineEditingAndProjectNavigation() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let suffix = UUID().uuidString.prefix(6)
+        let project = "Search \(suffix)"
+        let title = "Find \(suffix)"
+        let input = app.textFields["Quick capture. Exclamation mark for due date, at sign for planned date, slash for project."]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap()
+        input.typeText("\(title) /\(project)")
+        app.buttons["Add"].tap()
+        app.buttons["Create & add task"].tap()
+        let complete = app.buttons["Complete \(title)"]
+        XCTAssertTrue(complete.waitForExistence(timeout: 4))
+        complete.tap()
+
+        // Search from Today must still find completed, undated tasks elsewhere.
+        app.segmentedControls.buttons["Today"].tap()
+        let search = app.searchFields.firstMatch
+        if !search.isHittable { app.swipeDown() }
+        XCTAssertTrue(search.waitForExistence(timeout: 4))
+        search.tap()
+        search.typeText(project)
+        let projectResult = app.buttons["Open project \(project)"]
+        XCTAssertTrue(projectResult.waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Mark \(title) incomplete"].exists)
+        app.buttons["Edit title: \(title)"].tap()
+        let inline = app.textFields["Inline task title"]
+        XCTAssertTrue(inline.waitForExistence(timeout: 4))
+        inline.typeText(" revised")
+        app.buttons["Save title"].tap()
+        let revised = "\(title) revised"
+        let reveal = app.buttons["Show \(revised) in \(project)"]
+        XCTAssertTrue(reveal.waitForExistence(timeout: 4))
+        screenshot("iPhone — Project and task search", app: app)
+        reveal.tap()
+        XCTAssertTrue(app.navigationBars[project].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.tabBars.buttons["Projects"].isSelected)
+        XCTAssertTrue(app.buttons["Mark \(revised) incomplete"].isHittable)
+        XCTAssertFalse(app.staticTexts["Search results"].exists)
+
+        // Put the completed result below the fold to exercise reveal scrolling.
+        for index in 1...10 {
+            input.tap()
+            input.typeText("Later task \(index)")
+            app.buttons["Add"].tap()
+        }
+
+        // Project directory search also finds projects with no tasks.
+        app.navigationBars.buttons["Projects"].tap()
+        app.buttons["New project"].tap()
+        let empty = "Empty \(suffix)"
+        app.textFields["Project name"].tap()
+        app.textFields["Project name"].typeText(empty)
+        app.buttons["Create project"].tap()
+        if !search.isHittable { app.swipeDown() }
+        search.tap()
+        search.typeText(empty)
+        let emptyResult = app.buttons["Open project \(empty)"]
+        XCTAssertTrue(emptyResult.waitForExistence(timeout: 4))
+        emptyResult.tap()
+        XCTAssertTrue(app.navigationBars[empty].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Create a task"].exists)
+
+        // A task-title search crosses the currently selected project's boundary.
+        if !search.isHittable { app.swipeDown() }
+        search.tap()
+        search.typeText(revised)
+        XCTAssertTrue(reveal.waitForExistence(timeout: 4))
+        reveal.tap()
+        XCTAssertTrue(app.navigationBars[project].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Mark \(revised) incomplete"].isHittable)
+        screenshot("iPhone — Search reveals task in project", app: app)
+    }
+
     @MainActor func testDarkModeAndLargeText() {
         continueAfterFailure = false
         let app = XCUIApplication()

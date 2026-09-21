@@ -88,6 +88,21 @@ public final class TaskStore {
         }
     }
 
+    public func search(_ text: String) -> (projects: [Project], tasks: [TaskItem]) {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return ([], []) }
+        let projects = projects
+        let names = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.name) })
+        return (
+            projects.filter { $0.name.localizedStandardContains(query) },
+            tasks.filter {
+                $0.title.localizedStandardContains(query)
+                    || $0.details.localizedStandardContains(query)
+                    || (names[$0.projectId] ?? $0.project).localizedStandardContains(query)
+            }
+        )
+    }
+
     public func isPending(_ id: String) -> Bool { state.pending.contains { $0.key == "tasks/\(id)" } }
     public func serverTask(_ id: String) -> TaskItem? { state.snapshot.tasks.first { $0.id == id } }
 

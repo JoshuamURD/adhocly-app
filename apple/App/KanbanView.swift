@@ -138,7 +138,7 @@ struct KanbanView: View {
 
     private func card(_ task: TaskItem, in lane: KanbanLane, cards: [TaskItem]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button { editTask(task) } label: {
+            TaskQuickEdit(model: model, store: store, task: task, editDetails: editTask) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(task.title).font(.body.weight(.medium)).strikethrough(task.completed)
                         .foregroundStyle(task.completed ? .secondary : .primary)
@@ -153,7 +153,6 @@ struct KanbanView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             HStack {
                 Button { model.perform { try store.toggle(task.id) } } label: {
                     Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")

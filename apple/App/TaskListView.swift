@@ -24,6 +24,7 @@ struct TaskListView: View {
     @AppStorage("todaySort") private var todaySort = TodayTaskOrder.due
     @AppStorage("todayGrouping") private var todayGrouping = ""
     @State private var editor: EditorRequest?
+    @State private var editingTitle = false
     @State private var showConnection = false
     @State private var showReview = false
     @State private var showProperties = false
@@ -275,9 +276,8 @@ struct TaskListView: View {
             }
             if scope == "today" { todayControls }
             if scope == "schedule" {
-                ScheduleView(tasks: visibleTasks,
-                             editTask: { editor = EditorRequest(draft: $0, original: $0) },
-                             toggleTask: { task in model.perform { try store.toggle(task.id) } })
+                ScheduleView(model: model, store: store, tasks: visibleTasks,
+                             editTask: { editor = EditorRequest(draft: $0, original: $0) })
             } else if let selectedBoard, let field = store.taskFields.first(where: { $0.id == selectedBoard.fieldId }) {
                 KanbanView(model: model, store: store, board: selectedBoard, field: field, tasks: visibleTasks,
                            editTask: { editor = EditorRequest(draft: $0, original: $0) },
@@ -287,7 +287,10 @@ struct TaskListView: View {
             }
         }
         .background(AppStyle.canvas)
-        .safeAreaInset(edge: .bottom, spacing: 0) { captureBar(scope: scope) }
+        .onPreferenceChange(TaskTitleEditingKey.self) { editingTitle = $0 }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !editingTitle { captureBar(scope: scope) }
+        }
         .navigationTitle(title(for: scope))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -384,11 +387,6 @@ struct TaskListView: View {
                     Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
                     Button("Edit") { editor = EditorRequest(draft: task, original: task) }
                 }
-                .contextMenu {
-                    Button("Edit") { editor = EditorRequest(draft: task, original: task) }
-                    Button(task.completed ? "Mark incomplete" : "Complete") { model.perform { try store.toggle(task.id) } }
-                    Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
-                }
         }
     }
 
@@ -443,7 +441,8 @@ struct TaskListView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(task.completed ? "Mark \(task.title) incomplete" : "Complete \(task.title)")
-            Button { editor = EditorRequest(draft: task, original: task) } label: {
+            TaskQuickEdit(model: model, store: store, task: task,
+                          editDetails: { editor = EditorRequest(draft: $0, original: $0) }) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(task.title).font(.body.weight(.medium))
                         .strikethrough(task.completed)
@@ -463,7 +462,6 @@ struct TaskListView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             if store.isPending(task.id) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 16)

@@ -2,9 +2,10 @@ import AdhoclyCore
 import SwiftUI
 
 struct ScheduleView: View {
+    let model: AppModel
+    let store: TaskStore
     let tasks: [TaskItem]
     let editTask: (TaskItem) -> Void
-    let toggleTask: (TaskItem) -> Void
     @AppStorage("schedulePeriod") private var period = SchedulePeriod.week
     @State private var date = Date()
     @Environment(\.calendar) private var calendar
@@ -219,7 +220,7 @@ struct ScheduleView: View {
 
     private func entryButton(_ entry: ScheduleEntry, compact: Bool = false) -> some View {
         let color: Color = entry.kind == .planned ? .accentColor : .orange
-        return Button { editTask(entry.task) } label: {
+        return TaskQuickEdit(model: model, store: store, task: entry.task, editDetails: editTask) {
             VStack(alignment: .leading, spacing: 4) {
                 Label("\(entry.kind.name) · \(entry.date.formatted(date: .omitted, time: .shortened))", systemImage: entry.kind.symbol)
                     .font(.caption2).foregroundStyle(color)
@@ -229,20 +230,17 @@ struct ScheduleView: View {
                     .foregroundStyle(entry.task.completed ? .secondary : .primary)
                     .lineLimit(compact ? 1 : 2)
             }
-            .padding(8)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3) }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .padding(8)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3) }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(entry.task.title), \(entry.kind.name) \(entry.date.formatted(date: .abbreviated, time: .shortened)), \(entry.task.project)\(entry.task.completed ? ", completed" : "")")
         .accessibilityIdentifier("schedule-entry-\(entry.id)")
-        .contextMenu {
-            Button("Edit task") { editTask(entry.task) }
-            Button(entry.task.completed ? "Mark incomplete" : "Complete") { toggleTask(entry.task) }
+        .accessibilityAction(named: entry.task.completed ? "Mark incomplete" : "Complete") {
+            model.perform { try store.toggle(entry.task.id) }
         }
-        .accessibilityAction(named: entry.task.completed ? "Mark incomplete" : "Complete") { toggleTask(entry.task) }
     }
 
     private func openDay(_ day: Date) {

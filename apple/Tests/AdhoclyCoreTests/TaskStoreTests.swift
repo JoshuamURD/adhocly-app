@@ -179,6 +179,33 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(blocked.pendingCount, 0)
     }
 
+    func testInlineEditPersistsWithoutReplacingDetailsAndRejectsStaleDraft() throws {
+        let file = file()
+        let store = try TaskStore(fileURL: file)
+        let project = try store.createProject(named: "Work")
+        var task = TaskItem(title: "Original")
+        task.details = "Keep me"
+        task.plannedFor = "2027-01-01T09:00"
+        task.reminders = [CustomReminder(kind: .planned, offsetUnit: .hours, offsetValue: 1)]
+        try store.save(task)
+        let original = try XCTUnwrap(store.tasks.first)
+        let preview = try Capture.parse("Edited !2027-01-02 3pm /Work", projects: store.projects)
+        let draft = preview.applying(to: original)
+        try store.save(draft, replacing: original)
+        let restored = try TaskStore(fileURL: file)
+        let edited = try XCTUnwrap(restored.tasks.first)
+        XCTAssertEqual(edited.id, original.id)
+        XCTAssertEqual(edited.title, "Edited")
+        XCTAssertEqual(edited.details, original.details)
+        XCTAssertEqual(edited.reminders, original.reminders)
+        XCTAssertEqual(edited.plannedFor, original.plannedFor)
+        XCTAssertEqual(edited.dueOn, "2027-01-02T15:00")
+        XCTAssertEqual(edited.projectId, project.id)
+        let pending = store.pendingCount
+        XCTAssertThrowsError(try store.save(draft, replacing: original))
+        XCTAssertEqual(store.pendingCount, pending)
+    }
+
     func testProjectConfigurationReviewUsesProjectsNotBoards() throws {
         let file = file()
         let project = Project(id: UUID().uuidString.lowercased(), name: "Local project")

@@ -37,6 +37,12 @@ Tokens live in a device-only Keychain entry scoped to the server URL. Switching 
 
 The client creates projects but does not yet rename or delete them, or manage folders, project-level metadata, or user accounts. Snapshots and the single upload queue suit a personal task list. Larger datasets would need a server change cursor and incremental storage.
 
+## Quick task editing
+
+Click a task in a list, board, or schedule to edit its title inline. Append `@tomorrow`, `!Monday 9am`, or `/Project name` to change its planned date, due date, or existing project; project suggestions and resolved dates appear before saving. Only explicitly supplied fields change—notes, reminders, status, and other dates stay intact. Press Return or **Save title** to save; **Cancel** or Escape discards the draft. Invalid shortcuts keep the draft open. Use the sliders button beside the title for the full details editor.
+
+Right-click a task (long-press on iPhone/iPad) for **Planned date**, **Due date**, and **Move to project** menus, plus completion and deletion. Date menus offer today, tomorrow, a week ahead, a custom date/time, and removal. Presets use the configured capture time. Removing a date pauses its relative reminders without deleting them.
+
 ## Kanban
 
 Open **By status** in the sidebar, or use **+ → New Kanban**. A board groups all tasks by Status or by a task property. Search filters the cards. Drag a card between columns, or use its menu’s **Move to** action with a keyboard, VoiceOver, or touch.

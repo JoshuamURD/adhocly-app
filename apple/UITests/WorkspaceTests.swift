@@ -31,6 +31,10 @@ final class WorkspaceTests: XCTestCase {
         app.tabBars.buttons["Boards"].tap()
         app.staticTexts["By status"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Move or edit Plan a quieter week"].waitForExistence(timeout: 4))
+        app.buttons["Edit title: Plan a quieter week"].tap()
+        XCTAssertTrue(app.textFields["Inline task title"].waitForExistence(timeout: 4))
+        app.textFields["Inline task title"].typeText(" ahead\n")
+        XCTAssertTrue(app.buttons["Move or edit Plan a quieter week ahead"].waitForExistence(timeout: 4))
         screenshot("iPhone — Board", app: app)
         app.tabBars.buttons["Tasks"].tap()
         XCTAssertTrue(input.waitForExistence(timeout: 4))
@@ -95,11 +99,15 @@ final class WorkspaceTests: XCTestCase {
         let picker = app.segmentedControls["schedule-period"]
         XCTAssertTrue(picker.waitForExistence(timeout: 4))
         picker.buttons["Day"].tap()
-        let planned = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "\(title), Planned")).firstMatch
-        let due = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "\(title), Due")).firstMatch
+        let planned = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "\(title), Planned")).firstMatch
+        let due = app.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "\(title), Due")).firstMatch
         XCTAssertTrue(planned.waitForExistence(timeout: 4))
         XCTAssertTrue(due.exists)
-        planned.tap()
+        planned.buttons["Edit title: \(title)"].tap()
+        XCTAssertTrue(app.textFields["Inline task title"].waitForExistence(timeout: 4))
+        XCTAssertFalse(app.navigationBars["Edit task"].exists)
+        app.buttons["Cancel"].tap()
+        planned.buttons["Details for \(title)"].tap()
         XCTAssertTrue(app.navigationBars["Edit task"].waitForExistence(timeout: 4))
         app.buttons["Cancel"].tap()
         let range = app.staticTexts["schedule-range"].label
@@ -170,6 +178,81 @@ final class WorkspaceTests: XCTestCase {
         app.staticTexts[newName].firstMatch.tap()
         XCTAssertTrue(app.buttons["Complete Read notes"].waitForExistence(timeout: 4))
         screenshot("iPhone — Created project from capture", app: app)
+    }
+
+    @MainActor func testInlineTitleShortcutsDetailsAndContextMenu() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let title = "Inline \(UUID().uuidString.prefix(6))"
+        let input = app.textFields["Quick capture. Exclamation mark for due date, at sign for planned date, slash for project."]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap()
+        input.typeText(title)
+        app.buttons["Add"].tap()
+        let edit = app.buttons["Edit title: \(title)"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 4))
+        edit.tap()
+        let inline = app.textFields["Inline task title"]
+        XCTAssertTrue(inline.waitForExistence(timeout: 4))
+        XCTAssertFalse(app.navigationBars["Edit task"].exists)
+        inline.typeText(" @not-a-date")
+        XCTAssertFalse(app.buttons["Save title"].isEnabled)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(edit.exists)
+        edit.tap()
+        inline.typeText(" updated @today 12am !today 12am /In")
+        app.buttons["Use project Inbox"].tap()
+        screenshot("iPhone — Inline shortcuts", app: app)
+        app.buttons["Save title"].tap()
+        let updatedTitle = "\(title) updated"
+        let updated = app.buttons["Edit title: \(updatedTitle)"]
+        XCTAssertTrue(updated.waitForExistence(timeout: 4))
+        app.buttons["Details for \(updatedTitle)"].tap()
+        XCTAssertTrue(app.navigationBars["Edit task"].waitForExistence(timeout: 4))
+        app.buttons["Cancel"].tap()
+
+        updated.press(forDuration: 1)
+        app.buttons["Planned date"].tap()
+        app.buttons["Remove planned date"].tap()
+        updated.press(forDuration: 1)
+        app.buttons["Due date"].tap()
+        app.buttons["Choose date & time…"].tap()
+        XCTAssertTrue(app.navigationBars["Due date"].waitForExistence(timeout: 4))
+        app.buttons["Save"].tap()
+        updated.press(forDuration: 1)
+        app.buttons["Due date"].tap()
+        app.buttons["Remove due date"].tap()
+        app.segmentedControls.buttons["Today"].tap()
+        XCTAssertFalse(updated.exists)
+        app.segmentedControls.buttons["To do"].tap()
+        XCTAssertTrue(updated.waitForExistence(timeout: 4))
+        updated.press(forDuration: 1)
+        screenshot("iPhone — Task context menu", app: app)
+        app.buttons["Planned date"].tap()
+        app.buttons["Today"].tap()
+        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        if system.alerts.firstMatch.waitForExistence(timeout: 2), system.buttons["Allow"].exists { system.buttons["Allow"].tap() }
+        app.segmentedControls.buttons["Today"].tap()
+        XCTAssertTrue(updated.waitForExistence(timeout: 4))
+        app.segmentedControls.buttons["To do"].tap()
+
+        app.tabBars.buttons["Projects"].tap()
+        app.buttons["New project"].tap()
+        let project = "Move \(UUID().uuidString.prefix(6))"
+        let name = app.textFields["Project name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 4))
+        name.tap()
+        name.typeText(project)
+        app.buttons["Create project"].tap()
+        app.tabBars.buttons["Tasks"].tap()
+        updated.press(forDuration: 1)
+        app.buttons["Move to project"].tap()
+        app.buttons[project].tap()
+        app.tabBars.buttons["Projects"].tap()
+        app.staticTexts[project].firstMatch.tap()
+        XCTAssertTrue(updated.waitForExistence(timeout: 4))
+        screenshot("iPhone — Inline editing and task actions", app: app)
     }
 
     @MainActor func testDarkModeAndLargeText() {

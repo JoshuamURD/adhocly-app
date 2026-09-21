@@ -56,6 +56,35 @@ final class CaptureTests: XCTestCase {
         }
     }
 
+    func testInlineEditingPreservesUnspecifiedFieldsAndLiteralTitles() throws {
+        let projects = [Project(id: "inbox", name: "Inbox"), Project(id: "work", name: "Work")]
+        var original = TaskItem(title: #"Email sam@example.com \"draft\" !important @home /folder C:\notes"#)
+        original.details = "Keep these notes"
+        original.plannedFor = "2026-03-07T14:30"
+        original.dueOn = "2026-03-09T16:00"
+        original.completed = true
+        original.statusId = "complete"
+        original.properties = ["priority": "high"]
+        original.repeatWeekday = 2
+        original.reminders = [CustomReminder(kind: .due, offsetUnit: .days, offsetValue: 1)]
+        let text = Capture.editingText(for: original.title)
+        XCTAssertEqual(try Capture.parse(text, projects: projects).applying(to: original), original)
+        for title in ["!important", "@home", "/path", "Read \\\"notes", "Task\\n@home", "https://example.com"] {
+            XCTAssertEqual(try Capture.parse(Capture.editingText(for: title), projects: projects).task.title, title)
+        }
+        var expected = original
+        expected.title = "Renamed"
+        XCTAssertEqual(try Capture.parse("Renamed", projects: projects).applying(to: original), expected)
+        expected.plannedFor = "2026-03-08T10:45"
+        XCTAssertEqual(try Capture.parse("Renamed @2026-03-08 10:45", projects: projects, calendar: calendar).applying(to: original), expected)
+        expected = original
+        expected.title = "Moved"
+        expected.projectId = "work"
+        expected.project = "Work"
+        expected.dueOn = "2026-03-10T09:00"
+        XCTAssertEqual(try Capture.parse("Moved /Work !2026-03-10", projects: projects, calendar: calendar).applying(to: original), expected)
+    }
+
     func testProjectCompletionAndNewProjectPreview() throws {
         let project = Project(id: "work", name: #"Work / Café ! @ \"quoted\""#)
         let projects = [Project(id: "inbox", name: "Inbox"), project]

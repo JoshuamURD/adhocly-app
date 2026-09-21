@@ -18,6 +18,7 @@
 		819A01BE8B2D18AF63E6CE6A /* TaskListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */; };
 		963A95D76903A6CE9DCA82CF /* AppStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D702CFFF61AB848257356 /* AppStyle.swift */; };
 		9A9354E970A075730A17C3EE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */; };
+		AB644D60F32DD138D891EE11 /* TaskQuickEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A6392F493E2C72EA99B16E /* TaskQuickEdit.swift */; };
 		ACC2122AB864DA3F400B962C /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6CF769F9D44E6FB36A547B /* ConnectionView.swift */; };
 		C48BEBF4C3568FE91602FB8F /* ProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9198A3830090CE7C9B8EE5F /* ProjectEditorView.swift */; };
 		CC67898B65155639D554C4BF /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D2ACA96F5095F7BA97EF58 /* KanbanView.swift */; };
@@ -29,6 +30,7 @@
 		30C50F6A897117BEC2260E3A /* Credentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Credentials.swift; sourceTree = "<group>"; };
 		429359F26B5CD814761E1B46 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		448B965FE0EF5AFD18A53A15 /* Adhocly-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-iOS.entitlements"; sourceTree = "<group>"; };
+		57A6392F493E2C72EA99B16E /* TaskQuickEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskQuickEdit.swift; sourceTree = "<group>"; };
 		63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskListView.swift; sourceTree = "<group>"; };
 		7D30FF224100AB7BE66F3C51 /* Adhocly-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Adhocly-macOS.entitlements"; sourceTree = "<group>"; };
 		7E1CBDAEDCC926DE2270F6EE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 				82B04EB378CEDBDB105C7C36 /* ScheduleView.swift */,
 				E3E535910C5B0C70CA303FA8 /* TaskEditorView.swift */,
 				63FE6C9A91D10C203F8A7E3F /* TaskListView.swift */,
+				57A6392F493E2C72EA99B16E /* TaskQuickEdit.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -191,6 +194,7 @@
 				11C8551F6E7D618B3B0E4616 /* ScheduleView.swift in Sources */,
 				14929AA7E6797F1983984F78 /* TaskEditorView.swift in Sources */,
 				819A01BE8B2D18AF63E6CE6A /* TaskListView.swift in Sources */,
+				AB644D60F32DD138D891EE11 /* TaskQuickEdit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -6,12 +6,36 @@ public struct CaptureResult: Equatable, Sendable {
     public let hasPlannedDate: Bool
     public let hasProject: Bool
     public let projectToCreate: Project?
+
+    /// Editing a title changes only the fields explicitly supplied by shortcuts.
+    public func applying(to original: TaskItem) -> TaskItem {
+        var updated = original
+        updated.title = task.title
+        if hasDueDate { updated.dueOn = task.dueOn }
+        if hasPlannedDate { updated.plannedFor = task.plannedFor }
+        if hasProject { updated.projectId = task.projectId; updated.project = task.project }
+        return updated
+    }
 }
 
 /// Prefixes occupy the suffix of a capture: title !due phrase @planned phrase /project name.
 /// Delimiters inside quotes or escaped with a backslash stay literal. Invalid commands never
 /// disappear from a title silently: the UI keeps the raw input and requires a correction.
 public enum Capture {
+    /// Existing literal prefixes and quotes must not turn into commands when editing.
+    public static func editingText(for title: String) -> String {
+        var text = ""
+        var boundary = true
+        for character in title {
+            if character == "\\" || character == "\"" || (boundary && "!@/".contains(character)) {
+                text.append("\\")
+            }
+            text.append(character)
+            boundary = character.isWhitespace
+        }
+        return text
+    }
+
     public static func parse(_ input: String, projects: [Project], defaultProjectId: String = "inbox",
                              now: Date = Date(), defaultHour: Int = 9, defaultMinute: Int = 0,
                              calendar: Calendar = .current, allowNewProject: Bool = false) throws -> CaptureResult {

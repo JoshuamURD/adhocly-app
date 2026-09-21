@@ -1,5 +1,25 @@
 import Foundation
 
+public enum TaskDateWindow: String, CaseIterable, Sendable {
+    case today, tomorrow, thisWeek = "this-week"
+
+    public var name: String {
+        switch self {
+        case .today: "Today"
+        case .tomorrow: "Tomorrow"
+        case .thisWeek: "This week"
+        }
+    }
+
+    public var dateDescription: String {
+        switch self {
+        case .today: "today"
+        case .tomorrow: "tomorrow"
+        case .thisWeek: "in the next 7 days"
+        }
+    }
+}
+
 public enum TodayTaskOrder: String, CaseIterable, Sendable {
     case project, due, planned, alphabetical, status
 
@@ -21,10 +41,20 @@ public struct TodayTaskGroup: Identifiable, Sendable {
 }
 
 public enum TodayTasks {
-    public static func matching(_ tasks: [TaskItem], now: Date = Date(), calendar: Calendar = .current) -> [TaskItem] {
-        let day = LocalDateTime.string(from: now, calendar: calendar).prefix(10)
+    public static func matching(_ tasks: [TaskItem], in window: TaskDateWindow = .today,
+                                now: Date = Date(), calendar: Calendar = .current) -> [TaskItem] {
+        let today = calendar.startOfDay(for: now)
+        let start = calendar.date(byAdding: .day, value: window == .tomorrow ? 1 : 0, to: today)!
+        let end = calendar.date(byAdding: .day, value: window == .thisWeek ? 7 : 1, to: start)!
+        let firstDay = LocalDateTime.string(from: start, calendar: calendar).prefix(10)
+        let endDay = LocalDateTime.string(from: end, calendar: calendar).prefix(10)
         // These are local wall-clock strings: do not shift their dates through UTC.
-        return tasks.filter { $0.plannedFor?.prefix(10) == day || $0.dueOn?.prefix(10) == day }
+        return tasks.filter { task in
+            [task.plannedFor, task.dueOn].contains { value in
+                guard let day = value?.prefix(10) else { return false }
+                return day >= firstDay && day < endDay
+            }
+        }
     }
 
     public static func sorted(_ tasks: [TaskItem], by order: TodayTaskOrder,

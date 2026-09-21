@@ -18,11 +18,11 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertTrue(complete.waitForExistence(timeout: 4))
         screenshot("iPhone — Tasks", app: app)
         complete.tap()
-        app.segmentedControls.buttons["Completed"].tap()
+        selectWorkspace("Completed", app: app)
         let reopen = app.buttons["Mark Plan a quieter week incomplete"]
         XCTAssertTrue(reopen.waitForExistence(timeout: 4))
         reopen.tap()
-        app.segmentedControls.buttons["To do"].tap()
+        selectWorkspace("To do", app: app)
         XCTAssertTrue(complete.waitForExistence(timeout: 4))
 
         app.tabBars.buttons["Projects"].tap()
@@ -54,7 +54,7 @@ final class WorkspaceTests: XCTestCase {
             input.typeText(text)
             app.buttons["Add"].tap()
         }
-        app.segmentedControls.buttons["Today"].tap()
+        selectWorkspace("Today", app: app)
         let alpha = app.buttons["Complete Today Alpha"]
         let bravo = app.buttons["Complete Today Bravo"]
         let charlie = app.buttons["Complete Today Charlie"]
@@ -75,7 +75,7 @@ final class WorkspaceTests: XCTestCase {
 
         app.terminate()
         app.launch()
-        app.segmentedControls.buttons["Today"].tap()
+        selectWorkspace("Today", app: app)
         XCTAssertTrue(app.buttons["today-sort"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.buttons["today-sort"].label.contains("Alphabetical"))
         XCTAssertTrue(app.buttons["today-group"].label.contains("Status"))
@@ -83,6 +83,72 @@ final class WorkspaceTests: XCTestCase {
         app.buttons["today-group"].tap()
         app.buttons["None"].tap()
         XCTAssertTrue(app.buttons["today-group"].label.contains("None"))
+    }
+
+    @MainActor func testTomorrowAndThisWeekAreSeparateViewsWithIndependentPreferences() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let input = app.textFields["Quick capture. Exclamation mark for due date, at sign for planned date, slash for project."]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        let prefix = "Window \(UUID().uuidString.prefix(6))"
+        for text in ["Today @today 12am", "Alpha @tomorrow 12am", "Bravo !tomorrow 12am",
+                     "Later @in six days", "Outside !in seven days", "Undated"] {
+            input.tap()
+            input.typeText("\(prefix) \(text)")
+            app.buttons["Add"].tap()
+        }
+        selectWorkspace("Tomorrow", app: app)
+        let alpha = app.buttons["Complete \(prefix) Alpha"]
+        let bravo = app.buttons["Complete \(prefix) Bravo"]
+        XCTAssertTrue(alpha.waitForExistence(timeout: 4))
+        XCTAssertTrue(bravo.exists)
+        for title in ["Today", "Later", "Outside", "Undated"] {
+            XCTAssertFalse(app.buttons["Complete \(prefix) \(title)"].exists)
+        }
+        app.buttons["tomorrow-sort"].tap()
+        app.buttons["Alphabetical"].tap()
+        XCTAssertLessThan(alpha.frame.minY, bravo.frame.minY)
+        app.buttons["tomorrow-group"].tap()
+        app.buttons["Status"].tap()
+        alpha.tap()
+        XCTAssertTrue(app.buttons["Mark \(prefix) Alpha incomplete"].waitForExistence(timeout: 4))
+
+        selectWorkspace("This week", app: app)
+        var visibleTasks = Set<String>()
+        let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
+                                                    "Complete \(prefix)", "Mark \(prefix)"))
+        let list = app.collectionViews.firstMatch
+        for _ in 0..<6 {
+            visibleTasks.formUnion(rows.allElementsBoundByIndex.map(\.label))
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.01, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)))
+        }
+        XCTAssertEqual(visibleTasks, ["Complete \(prefix) Today", "Complete \(prefix) Bravo",
+                                     "Complete \(prefix) Later", "Mark \(prefix) Alpha incomplete"])
+        app.buttons["this-week-sort"].tap()
+        app.buttons["Planned date"].tap()
+        app.buttons["this-week-group"].tap()
+        app.buttons["Project"].tap()
+
+        selectWorkspace("Today", app: app)
+        XCTAssertTrue(app.buttons["Complete \(prefix) Today"].waitForExistence(timeout: 4))
+        XCTAssertFalse(bravo.exists)
+        XCTAssertFalse(app.buttons["Complete \(prefix) Later"].exists)
+        app.buttons["today-sort"].tap()
+        app.buttons["Due date"].tap()
+        app.buttons["today-group"].tap()
+        app.buttons["None"].tap()
+
+        app.terminate()
+        app.launch()
+        for (name, scope, sort, grouping) in [("Tomorrow", "tomorrow", "Alphabetical", "Status"),
+                                            ("This week", "this-week", "Planned date", "Project"),
+                                            ("Today", "today", "Due date", "None")] {
+            selectWorkspace(name, app: app)
+            XCTAssertTrue(app.buttons["\(scope)-sort"].label.contains(sort))
+            XCTAssertTrue(app.buttons["\(scope)-group"].label.contains(grouping))
+        }
     }
 
     @MainActor func testScheduleViewsNavigationAndTaskEditing() {
@@ -293,9 +359,9 @@ final class WorkspaceTests: XCTestCase {
         updated.press(forDuration: 1)
         app.buttons["Due date"].tap()
         app.buttons["Remove due date"].tap()
-        app.segmentedControls.buttons["Today"].tap()
+        selectWorkspace("Today", app: app)
         XCTAssertFalse(updated.exists)
-        app.segmentedControls.buttons["To do"].tap()
+        selectWorkspace("To do", app: app)
         XCTAssertTrue(updated.waitForExistence(timeout: 4))
         updated.press(forDuration: 1)
         screenshot("iPhone — Task context menu", app: app)
@@ -303,9 +369,9 @@ final class WorkspaceTests: XCTestCase {
         app.buttons["Today"].tap()
         let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         if system.alerts.firstMatch.waitForExistence(timeout: 2), system.buttons["Allow"].exists { system.buttons["Allow"].tap() }
-        app.segmentedControls.buttons["Today"].tap()
+        selectWorkspace("Today", app: app)
         XCTAssertTrue(updated.waitForExistence(timeout: 4))
-        app.segmentedControls.buttons["To do"].tap()
+        selectWorkspace("To do", app: app)
 
         app.tabBars.buttons["Projects"].tap()
         app.buttons["New project"].tap()
@@ -343,7 +409,7 @@ final class WorkspaceTests: XCTestCase {
         complete.tap()
 
         // Search from Today must still find completed, undated tasks elsewhere.
-        app.segmentedControls.buttons["Today"].tap()
+        selectWorkspace("Today", app: app)
         let search = app.searchFields.firstMatch
         if !search.isHittable { app.swipeDown() }
         XCTAssertTrue(search.waitForExistence(timeout: 4))
@@ -411,6 +477,11 @@ final class WorkspaceTests: XCTestCase {
         app.tabBars.buttons["Projects"].tap()
         XCTAssertTrue(app.staticTexts["Inbox"].firstMatch.waitForExistence(timeout: 4))
         screenshot("iPhone — Projects, large text", app: app)
+    }
+
+    @MainActor private func selectWorkspace(_ name: String, app: XCUIApplication) {
+        app.buttons["workspace-filter"].tap()
+        app.buttons[name].tap()
     }
 
     @MainActor private func screenshot(_ name: String, app: XCUIApplication) {

@@ -33,6 +33,10 @@ struct TaskListView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("todaySort") private var todaySort = TodayTaskOrder.due
     @AppStorage("todayGrouping") private var todayGrouping = ""
+    @AppStorage("tomorrowSort") private var tomorrowSort = TodayTaskOrder.due
+    @AppStorage("tomorrowGrouping") private var tomorrowGrouping = ""
+    @AppStorage("thisWeekSort") private var thisWeekSort = TodayTaskOrder.due
+    @AppStorage("thisWeekGrouping") private var thisWeekGrouping = ""
     @State private var editor: EditorRequest?
     @State private var editingTitle = false
     @State private var showConnection = false
@@ -54,7 +58,7 @@ struct TaskListView: View {
     }
 
     private func tasks(for scope: String) -> [TaskItem] {
-        let scopedTasks = scope == "today" ? TodayTasks.matching(store.tasks, now: today) : store.tasks
+        let scopedTasks = TaskDateWindow(rawValue: scope).map { TodayTasks.matching(store.tasks, in: $0, now: today) } ?? store.tasks
         return scopedTasks.filter { task in
             let matches: Bool
             switch scope {
@@ -74,7 +78,8 @@ struct TaskListView: View {
             return store.projects.first { $0.id == String(scope.dropFirst(8)) }?.name ?? "Project"
         }
         if scope == "schedule" { return "Schedule" }
-        return scope == "today" ? "Today" : scope == "completed" ? "Completed" : scope == "all" ? "All tasks" : "To do"
+        if let window = TaskDateWindow(rawValue: scope) { return window.name }
+        return scope == "completed" ? "Completed" : scope == "all" ? "All tasks" : "To do"
     }
 
     private func newTask(in scope: String) -> TaskItem {
@@ -148,7 +153,10 @@ struct TaskListView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("Workspace") {
-                    sidebarLink("Today", symbol: "sun.max", scope: "today", count: TodayTasks.matching(store.tasks, now: today).count)
+                    ForEach(TaskDateWindow.allCases, id: \.self) { window in
+                        sidebarLink(window.name, symbol: window == .today ? "sun.max" : window == .tomorrow ? "sunrise" : "calendar.badge.clock",
+                                    scope: window.rawValue, count: tasks(for: window.rawValue).count)
+                    }
                     NavigationLink(value: "schedule") { Label("Schedule", systemImage: "calendar") }
                         .tag("schedule")
                     sidebarLink("To do", symbol: "checklist", scope: "active", count: store.tasks.filter { !$0.completed }.count)
@@ -356,15 +364,19 @@ struct TaskListView: View {
                 if showFilter {
                     Picker("Show tasks", selection: $taskFilter) {
                         Text("To do").tag("active")
-                        Text("Today").tag("today")
+                        ForEach(TaskDateWindow.allCases, id: \.self) { window in
+                            Text(window.name).tag(window.rawValue)
+                        }
                         Text("All").tag("all")
                         Text("Completed").tag("completed")
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("workspace-filter")
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 12)
                 }
-                if scope == "today" { todayControls }
+                if TaskDateWindow(rawValue: scope) != nil { dateControls(scope: scope) }
                 if scope == "schedule" {
                     ScheduleView(model: model, store: store, tasks: visibleTasks,
                                  editTask: { editor = EditorRequest(draft: $0, original: $0) })
@@ -480,6 +492,9 @@ struct TaskListView: View {
     }
 
     private func subtitle(for scope: String, count: Int) -> String {
+        if let window = TaskDateWindow(rawValue: scope), window != .today {
+            return "\(count) \(count == 1 ? "task" : "tasks") planned or due \(window.dateDescription)."
+        }
         #if os(macOS)
         if let board = board(for: scope) {
             return "Grouped by \(store.taskFields.first { $0.id == board.fieldId }?.name ?? "property") · \(count) tasks"
@@ -508,10 +523,26 @@ struct TaskListView: View {
         }
     }
 
-    private var todayControls: some View {
+    private func dateSort(for scope: String) -> Binding<TodayTaskOrder> {
+        switch TaskDateWindow(rawValue: scope) {
+        case .tomorrow: $tomorrowSort
+        case .thisWeek: $thisWeekSort
+        default: $todaySort
+        }
+    }
+
+    private func dateGrouping(for scope: String) -> Binding<String> {
+        switch TaskDateWindow(rawValue: scope) {
+        case .tomorrow: $tomorrowGrouping
+        case .thisWeek: $thisWeekGrouping
+        default: $todayGrouping
+        }
+    }
+
+    private func dateControls(scope: String) -> some View {
         ViewThatFits(in: .horizontal) {
-            HStack { todaySortMenu; todayGroupMenu; Spacer() }
-            VStack(alignment: .leading) { todaySortMenu; todayGroupMenu }
+            HStack { dateSortMenu(scope: scope); dateGroupMenu(scope: scope); Spacer() }
+            VStack(alignment: .leading) { dateSortMenu(scope: scope); dateGroupMenu(scope: scope) }
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.subheadline)
@@ -524,27 +555,29 @@ struct TaskListView: View {
         #endif
     }
 
-    private var todaySortMenu: some View {
-        Menu {
-            Picker("Sort by", selection: $todaySort) {
+    private func dateSortMenu(scope: String) -> some View {
+        let sort = dateSort(for: scope)
+        return Menu {
+            Picker("Sort by", selection: sort) {
                 ForEach(TodayTaskOrder.allCases, id: \.self) { Text($0.name).tag($0) }
             }
         } label: {
-            Label("Sort: \(todaySort.name)", systemImage: "arrow.up.arrow.down")
+            Label("Sort: \(sort.wrappedValue.name)", systemImage: "arrow.up.arrow.down")
         }
-        .accessibilityIdentifier("today-sort")
+        .accessibilityIdentifier("\(scope)-sort")
     }
 
-    private var todayGroupMenu: some View {
-        Menu {
-            Picker("Group by", selection: $todayGrouping) {
+    private func dateGroupMenu(scope: String) -> some View {
+        let grouping = dateGrouping(for: scope)
+        return Menu {
+            Picker("Group by", selection: grouping) {
                 Text("None").tag("")
                 ForEach(TodayTaskOrder.allCases, id: \.self) { Text($0.name).tag($0.rawValue) }
             }
         } label: {
-            Label("Group: \(TodayTaskOrder(rawValue: todayGrouping)?.name ?? "None")", systemImage: "rectangle.3.group")
+            Label("Group: \(TodayTaskOrder(rawValue: grouping.wrappedValue)?.name ?? "None")", systemImage: "rectangle.3.group")
         }
-        .accessibilityIdentifier("today-group")
+        .accessibilityIdentifier("\(scope)-group")
     }
 
     private func taskRows(_ tasks: [TaskItem], showLocation: Bool = false) -> some View {
@@ -564,10 +597,13 @@ struct TaskListView: View {
     }
 
     private func taskList(_ tasks: [TaskItem], scope: String) -> some View {
-        ScrollViewReader { proxy in
+        let window = TaskDateWindow(rawValue: scope)
+        let sort = dateSort(for: scope).wrappedValue
+        let grouping = TodayTaskOrder(rawValue: dateGrouping(for: scope).wrappedValue)
+        return ScrollViewReader { proxy in
             List {
-                if scope == "today", let grouping = TodayTaskOrder(rawValue: todayGrouping) {
-                    ForEach(TodayTasks.groups(tasks, by: grouping, sort: todaySort, statuses: store.statusField.options)) { group in
+                if window != nil, let grouping {
+                    ForEach(TodayTasks.groups(tasks, by: grouping, sort: sort, statuses: store.statusField.options)) { group in
                         Section {
                             taskRows(group.tasks)
                         } header: {
@@ -579,7 +615,7 @@ struct TaskListView: View {
                         }
                     }
                 } else {
-                    taskRows(scope == "today" ? TodayTasks.sorted(tasks, by: todaySort, statuses: store.statusField.options) : tasks)
+                    taskRows(window != nil ? TodayTasks.sorted(tasks, by: sort, statuses: store.statusField.options) : tasks)
                 }
             }
             .listStyle(.inset)
@@ -598,15 +634,15 @@ struct TaskListView: View {
                 if tasks.isEmpty {
                     ContentUnavailableView {
                         #if os(macOS)
-                        Label(scope == "today" ? "Nothing scheduled today" : scope == "completed" ? "No completed tasks" : "No tasks here",
+                        Label(window.map { "Nothing scheduled \($0.dateDescription)" } ?? (scope == "completed" ? "No completed tasks" : "No tasks here"),
                               systemImage: scope == "completed" ? "checkmark.circle" : "tray")
                         #else
-                        Label(scope == "today" ? "Nothing planned or due today" : scope == "completed" ? "Good things take a first step" : "A little room to think",
+                        Label(window.map { "Nothing planned or due \($0.dateDescription)" } ?? (scope == "completed" ? "Good things take a first step" : "A little room to think"),
                               systemImage: "leaf")
                             .foregroundStyle(Color.accentColor)
                         #endif
                     } description: {
-                        Text(scope == "today" ? "Tasks with a planned or due date today will appear here. Use @today or !today in quick capture." : scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail.")
+                        Text(window.map { "Tasks with a planned or due date \($0.dateDescription) will appear here." } ?? (scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail."))
                     } actions: {
                         if scope != "completed" {
                             Button("Create a task") { editor = EditorRequest(draft: newTask(in: scope), original: nil) }

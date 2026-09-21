@@ -36,6 +36,50 @@ final class TodayTasksTests: XCTestCase {
                        ["future-plan", "tomorrow"])
     }
 
+    func testDateWindowsUseLocalCalendarDaysAcrossDSTAndDateRollovers() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        for (day, yesterday, tomorrow, afterTomorrow, lastDay, endDay) in [
+            ("2026-03-07", "2026-03-06", "2026-03-08", "2026-03-09", "2026-03-13", "2026-03-14"),
+            ("2026-10-31", "2026-10-30", "2026-11-01", "2026-11-02", "2026-11-06", "2026-11-07"),
+            ("2026-12-31", "2026-12-30", "2027-01-01", "2027-01-02", "2027-01-06", "2027-01-07"),
+            ("2028-02-28", "2028-02-27", "2028-02-29", "2028-03-01", "2028-03-05", "2028-03-06")
+        ] {
+            let tasks = [
+                task("today-planned", planned: day + "T00:00"),
+                task("today-due", due: day + "T23:59"),
+                task("tomorrow-planned", planned: tomorrow + "T00:00"),
+                task("tomorrow-due", due: tomorrow + "T23:59"),
+                task("both", planned: tomorrow + "T09:00", due: tomorrow + "T17:00"),
+                task("done", due: tomorrow + "T08:00", status: "complete"),
+                task("outside-plan", planned: endDay + "T09:00", due: tomorrow + "T11:00"),
+                task("outside-due", planned: tomorrow + "T11:00", due: yesterday + "T09:00"),
+                task("after-tomorrow", due: afterTomorrow + "T00:00"),
+                task("last-planned", planned: lastDay + "T23:59"),
+                task("last-due", due: lastDay + "T23:59"),
+                task("overdue", due: yesterday + "T23:59"),
+                task("beyond-planned", planned: endDay + "T00:00"),
+                task("beyond-due", due: endDay + "T00:00"),
+                task("undated")
+            ]
+            let todayIDs = ["today-planned", "today-due"]
+            let tomorrowIDs = ["tomorrow-planned", "tomorrow-due", "both", "done", "outside-plan", "outside-due"]
+            let weekIDs = todayIDs + tomorrowIDs + ["after-tomorrow", "last-planned", "last-due"]
+            // Late local time is already the next UTC day; results must not depend on the current hour.
+            for time in ["T00:00", "T23:30"] {
+                let now = LocalDateTime.date(from: day + time, calendar: calendar)!
+                for (window, expected) in [(TaskDateWindow.today, todayIDs), (.tomorrow, tomorrowIDs), (.thisWeek, weekIDs)] {
+                    XCTAssertEqual(TodayTasks.matching(tasks, in: window, now: now, calendar: calendar).map(\.id),
+                                   expected, "\(window) at \(day)\(time)")
+                    XCTAssertTrue(TodayTasks.matching([], in: window, now: now, calendar: calendar).isEmpty)
+                }
+                let nextDay = LocalDateTime.date(from: tomorrow + time, calendar: calendar)!
+                XCTAssertEqual(TodayTasks.matching(tasks, in: .tomorrow, now: nextDay, calendar: calendar).map(\.id),
+                               ["after-tomorrow"])
+            }
+        }
+    }
+
     func testEverySortAndGroupPreservesTasksAndOrdersWithinGroups() {
         let statuses = [FieldOption(id: "doing", name: "Working"), FieldOption(id: "todo", name: "Ready"),
                         FieldOption(id: "complete", name: "Shipped")]

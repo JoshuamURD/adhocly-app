@@ -5,6 +5,19 @@ enum AppStyle {
     static let canvas = Color("Canvas")
     static let surface = Color("Surface")
     static let border = Color.primary.opacity(0.09)
+    #if os(macOS)
+    static let controlSide: CGFloat = 28
+    static let cardRadius: CGFloat = 8
+    static let captureRadius: CGFloat = 8
+    static let headingFont = Font.custom("HelveticaNeue-Medium", size: 26, relativeTo: .largeTitle)
+    static let editorFont = Font.system(.title2, weight: .semibold)
+    #else
+    static let controlSide: CGFloat = 44
+    static let cardRadius: CGFloat = 14
+    static let captureRadius: CGFloat = 16
+    static let headingFont = Font.system(.largeTitle, design: .serif, weight: .medium)
+    static let editorFont = Font.system(.title2, design: .serif, weight: .medium)
+    #endif
 }
 
 struct WorkspaceHeading: View {
@@ -14,14 +27,21 @@ struct WorkspaceHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(.largeTitle, design: .serif, weight: .medium))
+                .font(AppStyle.headingFont)
                 .accessibilityAddTraits(.isHeader)
             Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
+        #if os(macOS)
+        .padding(.top, 28)
+        .padding(.bottom, 20)
+        .background(AppStyle.surface)
+        .overlay(alignment: .bottom) { Divider() }
+        #else
         .padding(.top, 20)
         .padding(.bottom, 16)
+        #endif
     }
 }
 

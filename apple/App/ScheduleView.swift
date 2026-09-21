@@ -44,14 +44,17 @@ struct ScheduleView: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("schedule-period")
+            #if os(macOS)
+            .frame(maxWidth: 320)
+            #endif
             HStack(spacing: 8) {
                 Button { date = period.moving(date, by: -1, calendar: calendar) } label: {
-                    Image(systemName: "chevron.left").frame(width: 44, height: 44).contentShape(Rectangle())
+                    Image(systemName: "chevron.left").frame(width: AppStyle.controlSide, height: AppStyle.controlSide).contentShape(Rectangle())
                 }
                 .accessibilityLabel("Previous \(period.name.lowercased())")
                 .accessibilityIdentifier("schedule-previous")
                 Button { date = period.moving(date, by: 1, calendar: calendar) } label: {
-                    Image(systemName: "chevron.right").frame(width: 44, height: 44).contentShape(Rectangle())
+                    Image(systemName: "chevron.right").frame(width: AppStyle.controlSide, height: AppStyle.controlSide).contentShape(Rectangle())
                 }
                 .accessibilityLabel("Next \(period.name.lowercased())")
                 .accessibilityIdentifier("schedule-next")
@@ -60,7 +63,7 @@ struct ScheduleView: View {
                     .labelsHidden().datePickerStyle(.compact)
                     .accessibilityLabel("Schedule date")
                 Button { date = Date() } label: {
-                    Text("Today").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                    Text("Today").frame(minWidth: AppStyle.controlSide, minHeight: AppStyle.controlSide).contentShape(Rectangle())
                 }
                 .accessibilityIdentifier("schedule-today")
             }
@@ -73,6 +76,10 @@ struct ScheduleView: View {
         .padding(.horizontal, 20)
         .padding(.top, 16)
         .padding(.bottom, 12)
+        #if os(macOS)
+        .background(AppStyle.surface)
+        .overlay(alignment: .bottom) { Divider() }
+        #endif
     }
 
     private func rangeTitle(_ days: [Date]) -> some View {

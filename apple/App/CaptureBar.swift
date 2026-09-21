@@ -31,7 +31,7 @@ struct CaptureBar: View {
                     .textFieldStyle(.plain)
                     .font(.body)
                     .focused($isFocused)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: AppStyle.controlSide)
                     .onSubmit(save)
                     .accessibilityLabel("Quick capture. Exclamation mark for due date, at sign for planned date, slash for project.")
                     #if os(iOS)
@@ -45,9 +45,9 @@ struct CaptureBar: View {
             }
             .padding(8)
             .padding(.leading, 6)
-            .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+            .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.captureRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: AppStyle.captureRadius)
                     .stroke(isFocused ? Color.accentColor : AppStyle.border, lineWidth: isFocused ? 1.5 : 1)
             }
             Group {
@@ -77,11 +77,15 @@ struct CaptureBar: View {
                 if let project = preview?.projectToCreate {
                     Button("Create project “\(project.name)”…", systemImage: "folder.badge.plus", action: save)
                         .font(.callout)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: AppStyle.controlSide)
                 }
             }
             HStack {
+                #if os(macOS)
+                Text("@ planned   ! due   / project").font(.caption.monospaced())
+                #else
                 Text("Quick capture · / for projects").fontWeight(.medium)
+                #endif
                 Spacer()
                 Button { showHelp = true } label: {
                     Label("Date & project shortcuts", systemImage: "questionmark.circle")
@@ -89,7 +93,12 @@ struct CaptureBar: View {
                 .buttonStyle(.plain)
                 .popover(isPresented: $showHelp) {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("A task, in a sentence.").font(.system(.title2, design: .serif))
+                        Text("A task, in a sentence.")
+                            #if os(macOS)
+                            .font(AppStyle.editorFont)
+                            #else
+                            .font(.system(.title2, design: .serif))
+                            #endif
                         Text("Start with a title. Add a date or project if you need one.")
                         Label("!tomorrow — due date", systemImage: "flag")
                         Label("@Monday 9am — planned time", systemImage: "calendar")

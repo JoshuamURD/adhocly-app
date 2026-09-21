@@ -37,7 +37,7 @@ struct TaskQuickEdit<Content: View>: View {
             }
             Button(action: openDetails) {
                 Image(systemName: "slider.horizontal.3")
-                    .frame(width: 44, height: 44)
+                    .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

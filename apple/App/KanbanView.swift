@@ -22,12 +22,19 @@ struct KanbanView: View {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 16) {
                     ForEach(lanes) { lane in
+                        #if os(macOS)
+                        column(lane, width: max(240, min(320, (geometry.size.width - 48 - CGFloat(lanes.count - 1) * 16) / CGFloat(lanes.count))))
+                        #else
                         column(lane, width: min(320, max(240, geometry.size.width - 48)))
+                        #endif
                     }
                 }
                 .scrollTargetLayout()
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
+                #if os(macOS)
+                .padding(.top, 20)
+                #endif
             }
             .scrollTargetBehavior(.viewAligned)
             .scrollDismissesKeyboard(.interactively)
@@ -59,7 +66,12 @@ struct KanbanView: View {
                 Image(systemName: lane.isComplete ? "checkmark.circle.fill" : "circle.dotted")
                     .foregroundStyle(lane.isComplete ? Color.accentColor : Color.secondary)
                     .font(.subheadline)
-                Text(lane.name).font(.headline)
+                Text(lane.name)
+                    #if os(macOS)
+                    .font(.subheadline.weight(.semibold))
+                    #else
+                    .font(.headline)
+                    #endif
                 Text("\(cards.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(AppStyle.surface, in: Capsule())
@@ -70,7 +82,7 @@ struct KanbanView: View {
                     else if field.id == "status" { task.statusId = lane.value! }
                     else { task.properties[field.id] = lane.value }
                     addTask(task)
-                } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
+                } label: { Image(systemName: "plus").frame(width: AppStyle.controlSide, height: AppStyle.controlSide) }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Add task to \(lane.name)")
             }
@@ -112,7 +124,7 @@ struct KanbanView: View {
         .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(targetedLane == lane.id ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.035),
-                    in: RoundedRectangle(cornerRadius: 18))
+                    in: RoundedRectangle(cornerRadius: AppStyle.cardRadius + 4))
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { ids, _ in
             drop(ids, to: lane)
@@ -158,7 +170,7 @@ struct KanbanView: View {
                     Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
                         .foregroundStyle(task.completed ? Color.accentColor : Color.secondary)
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: AppStyle.controlSide, minHeight: AppStyle.controlSide)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(task.completed ? "Reopen \(task.title)" : "Complete \(task.title)")
@@ -186,16 +198,16 @@ struct KanbanView: View {
                     Divider()
                     Button("Edit") { editTask(task) }
                     Button("Delete task", role: .destructive) { model.perform { try store.delete(task.id) } }
-                } label: { Label("Move", systemImage: "arrow.right").font(.caption).frame(minHeight: 44) }
+                } label: { Label("Move", systemImage: "arrow.right").font(.caption).frame(minHeight: AppStyle.controlSide) }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .accessibilityLabel("Move or edit \(task.title)")
             }
         }
         .padding(14)
-        .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+        .background(AppStyle.surface, in: RoundedRectangle(cornerRadius: AppStyle.cardRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: AppStyle.cardRadius)
                 .stroke(targetedCard == task.id ? Color.accentColor : AppStyle.border, lineWidth: targetedCard == task.id ? 2 : 1)
                 .allowsHitTesting(false)
         }

@@ -167,12 +167,33 @@ struct TaskListView: View {
                 }
             }
             .listStyle(.sidebar)
+            #if os(macOS)
+            .buttonStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(AppStyle.canvas)
+            .environment(\.defaultMinListRowHeight, 32)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.square.fill")
+                        .font(.title2).foregroundStyle(.primary)
+                        .accessibilityHidden(true)
+                    Text("Adhocly").font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 20)
+            }
+            #else
             .navigationTitle("Adhocly")
+            #endif
             .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 12) {
+                    #if os(iOS)
                     Label("A little space for what’s next.", systemImage: "leaf")
                         .font(.caption).foregroundStyle(.secondary)
+                    #endif
                     Button { showConnection = true } label: {
                         Label("Settings & sync", systemImage: "gearshape")
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -181,6 +202,11 @@ struct TaskListView: View {
                     .accessibilityLabel("Settings")
                 }
                 .padding(20)
+                #if os(macOS)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppStyle.canvas)
+                .overlay(alignment: .top) { Divider() }
+                #endif
             }
         } detail: {
             workspace(selection ?? "active")
@@ -224,6 +250,11 @@ struct TaskListView: View {
                     Text(title)
                     Spacer()
                     Text("\(count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        #if os(macOS)
+                        .frame(minWidth: 22)
+                        .padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 4))
+                        #endif
                 }
             } icon: { Image(systemName: symbol) }
         }
@@ -420,6 +451,9 @@ struct TaskListView: View {
             }
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
+            #if os(macOS)
+            .background(AppStyle.surface)
+            #endif
             .scrollDismissesKeyboard(.interactively)
             .overlay {
                 if results.projects.isEmpty && results.tasks.isEmpty {
@@ -446,10 +480,18 @@ struct TaskListView: View {
     }
 
     private func subtitle(for scope: String, count: Int) -> String {
+        #if os(macOS)
+        if let board = board(for: scope) {
+            return "Grouped by \(store.taskFields.first { $0.id == board.fieldId }?.name ?? "property") · \(count) tasks"
+        }
+        if scope == "today" { return today.formatted(.dateTime.weekday(.wide).month(.wide).day()) }
+        return "\(count) \(count == 1 ? "task" : "tasks")\(scope == "completed" ? " completed" : "")"
+        #else
         if board(for: scope) != nil { return "Move work forward, one card at a time." }
         if scope == "completed" { return "A record of what you’ve taken care of." }
         if scope == "today" { return "\(count) \(count == 1 ? "task" : "tasks") planned or due today." }
         return count == 0 ? "Make room for your next idea." : "\(count) \(count == 1 ? "task" : "tasks") · One thing at a time."
+        #endif
     }
 
     private var settingsButton: some View {
@@ -475,6 +517,11 @@ struct TaskListView: View {
         .font(.subheadline)
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
+        #if os(macOS)
+        .padding(.top, 12)
+        .background(AppStyle.surface)
+        .overlay(alignment: .bottom) { Divider() }
+        #endif
     }
 
     private var todaySortMenu: some View {
@@ -506,6 +553,9 @@ struct TaskListView: View {
                 .id(task.id)
                 .listRowBackground(revealedTask?.id == task.id ? Color.accentColor.opacity(0.12) : AppStyle.surface)
                 .listRowSeparatorTint(AppStyle.border)
+                #if os(macOS)
+                .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 20))
+                #endif
                 .swipeActions {
                     Button("Delete", role: .destructive) { model.perform { try store.delete(task.id) } }
                     Button("Edit") { editor = EditorRequest(draft: task, original: task) }
@@ -534,6 +584,9 @@ struct TaskListView: View {
             }
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
+            #if os(macOS)
+            .background(AppStyle.surface)
+            #endif
             .scrollDismissesKeyboard(.interactively)
             .task(id: revealedTask?.id) {
                 if let task = revealedTask, scope == "project:\(task.projectId)" {
@@ -544,9 +597,14 @@ struct TaskListView: View {
             .overlay {
                 if tasks.isEmpty {
                     ContentUnavailableView {
+                        #if os(macOS)
+                        Label(scope == "today" ? "Nothing scheduled today" : scope == "completed" ? "No completed tasks" : "No tasks here",
+                              systemImage: scope == "completed" ? "checkmark.circle" : "tray")
+                        #else
                         Label(scope == "today" ? "Nothing planned or due today" : scope == "completed" ? "Good things take a first step" : "A little room to think",
                               systemImage: "leaf")
                             .foregroundStyle(Color.accentColor)
+                        #endif
                     } description: {
                         Text(scope == "today" ? "Tasks with a planned or due date today will appear here. Use @today or !today in quick capture." : scope == "completed" ? "Completed tasks will appear here." : "Capture an idea below, or add a task with more detail.")
                     } actions: {
@@ -564,15 +622,40 @@ struct TaskListView: View {
         HStack(alignment: .top, spacing: 8) {
             Button { model.perform { try store.toggle(task.id) } } label: {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                    #if os(macOS)
+                    .font(.system(size: 18, weight: .light))
+                    #else
                     .font(.title2.weight(.light))
+                    #endif
                     .foregroundStyle(task.completed ? Color.accentColor : Color.secondary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(task.completed ? "Mark \(task.title) incomplete" : "Complete \(task.title)")
             TaskQuickEdit(model: model, store: store, task: task,
                           editDetails: { editor = EditorRequest(draft: $0, original: $0) }) {
                 VStack(alignment: .leading, spacing: 7) {
+                    #if os(macOS)
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(task.title)
+                            .font(.body.weight(.medium))
+                            .strikethrough(task.completed)
+                            .foregroundStyle(task.completed ? .secondary : .primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(store.statusName(task.statusId))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(AppStyle.canvas, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { taskMetadata(task) }
+                        VStack(alignment: .leading, spacing: 5) { taskMetadata(task) }
+                    }
+                    if !task.details.isEmpty {
+                        Text(task.details).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    #else
                     Text(task.title).font(.body.weight(.medium))
                         .strikethrough(task.completed)
                         .foregroundStyle(task.completed ? .secondary : .primary)
@@ -586,15 +669,20 @@ struct TaskListView: View {
                     if task.repeatWeekday != nil {
                         Label("Repeats weekly", systemImage: "repeat").font(.caption).foregroundStyle(.secondary)
                     }
+                    #endif
                 }
+                #if os(macOS)
+                .padding(.vertical, 5)
+                #else
                 .padding(.vertical, 10)
+                #endif
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             if showLocation {
                 Button { openProject(task.projectId, revealing: task) } label: {
                     Image(systemName: "arrow.up.forward")
-                        .frame(width: 44, height: 44)
+                        .frame(width: AppStyle.controlSide, height: AppStyle.controlSide)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -612,6 +700,18 @@ struct TaskListView: View {
         }
         .padding(.vertical, 4)
     }
+
+    #if os(macOS)
+    @ViewBuilder private func taskMetadata(_ task: TaskItem) -> some View {
+        Text(task.project).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        if let planned = task.plannedFor { TaskDateLabel(value: planned, completed: task.completed) }
+        if let due = task.dueOn { TaskDateLabel(value: due, isDue: true, completed: task.completed) }
+        if task.repeatWeekday != nil {
+            Image(systemName: "repeat").font(.caption).foregroundStyle(.secondary)
+                .accessibilityLabel("Repeats weekly")
+        }
+    }
+    #endif
 
     private func captureBar(scope: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {

@@ -15,7 +15,7 @@ struct TaskEditorView: View {
             Form {
                 Section {
                     TextField("What needs doing?", text: $draft.title, axis: .vertical)
-                        .font(.system(.title2, design: .serif, weight: .medium))
+                        .font(AppStyle.editorFont)
                         .lineLimit(2...6)
                         .accessibilityLabel("Task title")
                 }
